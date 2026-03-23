@@ -570,10 +570,13 @@ class FighterCADApp(tk.Tk):
                 messagebox.showerror("Kaydetme Hatası", str(exc))
 
     def _on_catia_connect(self) -> None:
+        if self._assembler is None:
+            messagebox.showinfo("Bilgi", "Önce 'Oluştur' butonuna basarak geometri oluşturun.")
+            return
         try:
             from fightercad.catia.live_update import CATIALiveUpdater
             self._catia = CATIALiveUpdater()
-            if self._catia.connect():
+            if self._catia.connect(self._assembler):
                 self._set_status("CATIA bağlantısı kuruldu.")
             else:
                 messagebox.showwarning("Uyarı", "CATIA bağlantısı kurulamadı.\nCATIA'nın çalıştığından emin olun.")
