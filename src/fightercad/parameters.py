@@ -258,7 +258,7 @@ def create_ucav_params() -> AircraftParams:
             aspect_ratio=2.8,
             taper_ratio=0.06,  # very tapered
             leading_edge_sweep_deg=55.0,
-            trailing_edge_sweep_deg=15.0,  # positive TE sweep (stealth)
+            trailing_edge_sweep_deg=25.0,  # positive TE sweep aligned toward LE angle
             dihedral_deg=-2.0,
             twist_deg=-3.0,
             root_airfoil="naca64a004",
@@ -266,14 +266,14 @@ def create_ucav_params() -> AircraftParams:
             leading_edge_radius_mm=3.0,  # slightly rounded LE
             wing_station_pct=0.35,  # forward wing position (BWB)
             incidence_deg=2.0,
-            thickness_to_chord_root=0.10,  # thicker root (BWB structure)
-            thickness_to_chord_tip=0.03,
+            thickness_to_chord_root=0.12,  # thick root for BWB structure + payload
+            thickness_to_chord_tip=0.09,  # moderate tip for wave drag balance
             camber_root_pct=1.5,  # slight camber for subsonic efficiency
             camber_tip_pct=0.0,
             te_thickness_mm=1.0,  # blunt TE for stealth
             sawtooth_te_enabled=True,  # serrated TE
-            sawtooth_depth_mm=40.0,
-            sawtooth_count=10,
+            sawtooth_depth_mm=60.0,  # sized for X-band wavelength (~3cm)
+            sawtooth_count=12,
             inner_panel_span_pct=0.30,
             inner_panel_sweep_deg=60.0,
         ),
