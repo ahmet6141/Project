@@ -126,21 +126,29 @@ class CATIAPartBuilder:
     def add_loft(
         self,
         sections: list[Any],
-        body: Any,
+        geo_set: Any,
     ) -> Any:
-        """Create a multi-section solid (loft) through section curves.
+        """Create a multi-section surface (loft) through section curves.
+
+        Uses HybridShapeFactory loft with proper Reference objects,
+        which is compatible with HybridShape spline sections.
 
         Parameters
         ----------
         sections : list
-            List of CATIA spline/wire references.
-        body : CATIA Body
-            The body to add the loft to.
+            List of CATIA HybridShape spline objects.
+        geo_set : CATIA HybridBody
+            The geometrical set to add the loft surface to.
         """
-        shape_factory = self.part.ShapeFactory
-        loft = shape_factory.AddNewLoft()
+        # Create loft via HybridShapeFactory (works with HybridShape sections)
+        loft = self.hsf.AddNewLoft()
+
         for sec in sections:
-            loft.AddSectionToLoft(sec, 1, None)
+            # Convert HybridShape object to a Reference required by AddSectionToLoft
+            ref = self.part.CreateReferenceFromObject(sec)
+            loft.AddSectionToLoft(ref, 1, None)
+
+        geo_set.AppendHybridShape(loft)
         self.part.Update()
         return loft
 
@@ -166,7 +174,7 @@ class CATIAPartBuilder:
             splines.append(spline)
 
         if len(splines) >= 2:
-            self.add_loft(splines, body)
+            self.add_loft(splines, geo_set)
 
         self.part.Update()
         return body
@@ -188,7 +196,7 @@ class CATIAPartBuilder:
             splines.append(spline)
 
         if len(splines) >= 2:
-            self.add_loft(splines, body)
+            self.add_loft(splines, geo_set)
 
         self.part.Update()
         return body
