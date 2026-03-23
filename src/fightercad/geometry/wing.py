@@ -41,7 +41,7 @@ class WingBuilder:
     z = vertical (up).
     """
 
-    def __init__(self, params: WingParams, n_span_sections: int = 12, n_airfoil_pts: int = 80):
+    def __init__(self, params: WingParams, n_span_sections: int = 20, n_airfoil_pts: int = 150):
         self.p = params
         self.n_span = n_span_sections
         self.n_af = n_airfoil_pts

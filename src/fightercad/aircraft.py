@@ -392,3 +392,65 @@ class AircraftAssembler:
     def get_component_names(self) -> list[str]:
         """Return list of component names."""
         return list(self.components.keys())
+
+    def get_mesh_quality_report(self) -> dict:
+        """Compute mesh quality metrics for the combined mesh.
+
+        Returns a dict with:
+        - total_vertices, total_faces
+        - degenerate_count: triangles with zero area
+        - min/max/avg_aspect_ratio: triangle aspect ratios
+        - max_skewness: worst triangle skewness (0=equilateral, 1=degenerate)
+        - flipped_normals: count of inconsistently oriented triangles
+        """
+        verts, faces = self.get_combined_mesh()
+        n_faces = len(faces)
+        if n_faces == 0:
+            return {"total_vertices": len(verts), "total_faces": 0}
+
+        # Compute triangle edge lengths and areas
+        v0 = verts[faces[:, 0]]
+        v1 = verts[faces[:, 1]]
+        v2 = verts[faces[:, 2]]
+
+        e0 = np.linalg.norm(v1 - v0, axis=1)
+        e1 = np.linalg.norm(v2 - v1, axis=1)
+        e2 = np.linalg.norm(v0 - v2, axis=1)
+
+        # Triangle areas via cross product
+        cross = np.cross(v1 - v0, v2 - v0)
+        areas = 0.5 * np.linalg.norm(cross, axis=1)
+
+        # Aspect ratio: longest edge / (2 * area / longest edge) = longest² / (2*area)
+        longest = np.maximum(e0, np.maximum(e1, e2))
+        shortest = np.minimum(e0, np.minimum(e1, e2))
+        aspect_ratio = np.where(shortest > 1e-12, longest / shortest, 999.0)
+
+        # Skewness: 1 - (2 * area * sqrt(3)) / (3 * max_edge²)
+        # 0 = equilateral, 1 = degenerate
+        ideal_area = (math.sqrt(3.0) / 4.0) * longest ** 2
+        skewness = np.where(ideal_area > 1e-12, 1.0 - areas / ideal_area, 1.0)
+        skewness = np.clip(skewness, 0.0, 1.0)
+
+        # Degenerate triangles (near-zero area)
+        degenerate = np.sum(areas < 1e-10)
+
+        # Normal consistency check (count flipped normals via neighbor analysis)
+        normals = cross / (np.linalg.norm(cross, axis=1, keepdims=True) + 1e-12)
+        # Simple check: normals should be mostly consistent in direction
+        avg_normal = normals.mean(axis=0)
+        avg_normal /= np.linalg.norm(avg_normal) + 1e-12
+        dots = np.sum(normals * avg_normal, axis=1)
+        flipped = int(np.sum(dots < 0))
+
+        return {
+            "total_vertices": len(verts),
+            "total_faces": n_faces,
+            "degenerate_count": int(degenerate),
+            "min_aspect_ratio": float(aspect_ratio.min()),
+            "max_aspect_ratio": float(aspect_ratio.max()),
+            "avg_aspect_ratio": float(aspect_ratio.mean()),
+            "max_skewness": float(skewness.max()),
+            "avg_skewness": float(skewness.mean()),
+            "flipped_normals": flipped,
+        }

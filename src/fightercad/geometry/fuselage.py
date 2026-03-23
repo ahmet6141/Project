@@ -40,7 +40,7 @@ class FuselageBuilder:
       3. Aft taper: smooth power-curve reduction to tail
     """
 
-    def __init__(self, params: FuselageParams, n_sections: int = 80, n_ring: int = 48):
+    def __init__(self, params: FuselageParams, n_sections: int = 80, n_ring: int = 64):
         self.p = params
         self.n_sections = n_sections
         self.n_ring = n_ring

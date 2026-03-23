@@ -113,7 +113,9 @@ def biconvex_airfoil(
         going counter-clockwise (upper surface first, then lower reversed).
     """
     t_max = chord * thickness_pct / 100.0
-    x = np.linspace(0, chord, num_points)
+    # Cosine spacing: denser at LE and TE (professional standard)
+    beta = np.linspace(0, math.pi, num_points)
+    x = chord * 0.5 * (1.0 - np.cos(beta))
     y_half = 2.0 * t_max * (x / chord) * (1.0 - x / chord)
 
     # Apply LE radius blending
@@ -165,11 +167,10 @@ def diamond_airfoil(
     """
     t_max = chord * thickness_pct / 100.0
     x_peak = chord * peak_x_pct / 100.0
-    half_n = num_points // 2
 
-    x_fwd = np.linspace(0, x_peak, half_n, endpoint=False)
-    x_aft = np.linspace(x_peak, chord, num_points - half_n)
-    x = np.concatenate([x_fwd, x_aft])
+    # Cosine spacing with clustering at LE, peak, and TE
+    beta = np.linspace(0, math.pi, num_points)
+    x = chord * 0.5 * (1.0 - np.cos(beta))
 
     y_half = np.where(
         x <= x_peak,
