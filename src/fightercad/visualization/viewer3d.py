@@ -21,6 +21,10 @@ COMPONENT_COLORS = {
     "intake_right": (0.8, 0.3, 0.2),
     "intake_left": (0.8, 0.3, 0.2),
     "exhaust": (0.9, 0.6, 0.1),
+    "wing_root_fairing_right": (0.5, 0.5, 0.8),
+    "wing_root_fairing_left": (0.5, 0.5, 0.8),
+    "strake_right": (0.4, 0.55, 0.85),
+    "strake_left": (0.4, 0.55, 0.85),
 }
 
 # Check VTK availability
@@ -366,6 +370,10 @@ _MPL_COLORS = {
     "intake_right": (0.8, 0.3, 0.2, 0.7),
     "intake_left": (0.8, 0.3, 0.2, 0.7),
     "exhaust": (0.9, 0.6, 0.1, 0.7),
+    "wing_root_fairing_right": (0.5, 0.5, 0.8, 0.7),
+    "wing_root_fairing_left": (0.5, 0.5, 0.8, 0.7),
+    "strake_right": (0.4, 0.55, 0.85, 0.7),
+    "strake_left": (0.4, 0.55, 0.85, 0.7),
 }
 
 

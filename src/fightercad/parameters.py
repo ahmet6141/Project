@@ -58,6 +58,9 @@ class WingParams:
     leading_edge_radius_mm: float = 1.5
     wing_station_pct: float = 0.45
     incidence_deg: float = 1.0
+    # High-level thickness parameters
+    thickness_to_chord_root: float = 0.05  # root t/c ratio (5%)
+    thickness_to_chord_tip: float = 0.03  # tip t/c ratio (3%)
 
 
 # ---------------------------------------------------------------------------

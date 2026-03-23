@@ -350,6 +350,10 @@ class FighterCADApp(tk.Tk):
             "fuselage": "Govde",
             "wing_right": "Sag Kanat",
             "wing_left": "Sol Kanat",
+            "wing_root_fairing_right": "Sag Fairing",
+            "wing_root_fairing_left": "Sol Fairing",
+            "strake_right": "Sag Strake",
+            "strake_left": "Sol Strake",
             "vertical_stabilizer": "V.Stabilizator",
             "intake_right": "Sag Alik",
             "intake_left": "Sol Alik",
@@ -454,6 +458,8 @@ class FighterCADApp(tk.Tk):
         slider(f, "wing.leading_edge_radius_mm", "LE Yarıçap (mm)", 0.5, 5.0, 1.5, 0.1)
         slider(f, "wing.wing_station_pct", "Kanat Konum (%L)", 0.3, 0.6, 0.45, 0.01)
         slider(f, "wing.incidence_deg", "İncidence (°)", -2, 5, 1.0, 0.5)
+        slider(f, "wing.thickness_to_chord_root", "Kök t/c", 0.02, 0.12, 0.05, 0.005)
+        slider(f, "wing.thickness_to_chord_tip", "Uç t/c", 0.01, 0.08, 0.03, 0.005)
 
         # --- Blending ---
         f = section("Birleşim Hatları")
@@ -543,6 +549,8 @@ class FighterCADApp(tk.Tk):
                 leading_edge_radius_mm=g("wing.leading_edge_radius_mm"),
                 wing_station_pct=g("wing.wing_station_pct"),
                 incidence_deg=g("wing.incidence_deg"),
+                thickness_to_chord_root=g("wing.thickness_to_chord_root"),
+                thickness_to_chord_tip=g("wing.thickness_to_chord_tip"),
             ),
             blending=BlendingParams(
                 root_fillet_radius_mm=g("blending.root_fillet_radius_mm"),

@@ -89,12 +89,20 @@ class AircraftAssembler:
         self.components["fuselage"] = (fv, ff)
 
         # Wing meshes (offset to aircraft coordinates)
+        # Find fuselage radius at wing station for proper root placement
+        fuse_rh = fuse_r * (math.sqrt(p.fuselage.cross_section_aspect)
+                            if p.fuselage.cross_section != "circular" else 1.0)
+        fuse_rv = fuse_r / (math.sqrt(p.fuselage.cross_section_aspect)
+                            if p.fuselage.cross_section != "circular" else 1.0)
+
         for label, secs in [("wing_right", right_secs), ("wing_left", left_secs)]:
             verts = np.vstack([s.points_3d for s in secs])
             # Offset chordwise position
             verts[:, 0] += wing_x_offset
-            # Offset vertically to fuselage surface
-            sign = 1.0 if "right" in label else -1.0
+            # Offset wing root spanwise to fuselage surface
+            side = 1.0 if "right" in label else -1.0
+            root_y_offset = fuse_rh * side
+            verts[:, 1] += root_y_offset
             # Simple mesh from sections
             n_sec = len(secs)
             n_pts = len(secs[0].points_3d)
@@ -105,6 +113,41 @@ class AircraftAssembler:
                     faces.append([b0 + j, b0 + j + 1, b1 + j + 1])
                     faces.append([b0 + j, b1 + j + 1, b1 + j])
             self.components[label] = (verts, np.array(faces) if faces else np.zeros((0, 3), dtype=int))
+
+        # 7. Blending — wing-fuselage fairing
+        self.blending_op = BlendingOperator(p.blending)
+
+        for label, secs, side in [
+            ("wing_root_fairing_right", right_secs, 1.0),
+            ("wing_root_fairing_left", left_secs, -1.0),
+        ]:
+            if len(secs) > 0:
+                # Wing root airfoil points (innermost section)
+                wing_root_pts = secs[0].points_3d.copy()
+                wing_root_pts[:, 0] += wing_x_offset
+                wing_root_pts[:, 1] += fuse_rh * side
+
+                fv, ff = self.blending_op.build_wing_fuselage_fairing(
+                    wing_root_sections=wing_root_pts,
+                    fuselage_sections=self.fuselage_builder.sections,
+                    wing_x_offset=wing_x_offset,
+                    fuselage_radius_h=fuse_rh,
+                    fuselage_radius_v=fuse_rv,
+                    side=side,
+                )
+                if len(fv) > 0:
+                    self.components[label] = (fv, ff)
+
+        # Strake (if enabled)
+        for label, side in [("strake_right", 1.0), ("strake_left", -1.0)]:
+            sv, sf = self.blending_op.build_strake(
+                fuselage_length=L,
+                wing_root_x=wing_x_offset,
+                fuselage_radius=fuse_rh,
+                side=side,
+            )
+            if len(sv) > 0:
+                self.components[label] = (sv, sf)
 
         # 4. Vertical stabilizer
         self.stab_builder = StabilizerBuilder(p.vertical_stabilizer)
@@ -131,9 +174,6 @@ class AircraftAssembler:
         ev, ef = self.exhaust_builder.get_mesh()
         ev[:, 0] += L - p.exhaust.nozzle_length_m
         self.components["exhaust"] = (ev, ef)
-
-        # 7. Blending operator
-        self.blending_op = BlendingOperator(p.blending)
 
         return self.components
 
