@@ -357,6 +357,8 @@ class FighterCADApp(tk.Tk):
             "vertical_stabilizer": "V.Stabilizator",
             "intake_right": "Sag Alik",
             "intake_left": "Sol Alik",
+            "bld_right": "Sag BLD",
+            "bld_left": "Sol BLD",
             "exhaust": "Egzoz",
         }
 
@@ -496,6 +498,9 @@ class FighterCADApp(tk.Tk):
         slider(f, "intake.lip_sweep_deg", "Dudak Süpürme (°)", 10, 50, 30.0, 1)
         slider(f, "intake.station_pct", "Konum (%L)", 0.15, 0.5, 0.30, 0.01)
         slider(f, "intake.boundary_layer_diverter_mm", "BL Ayırıcı (mm)", 20, 200, 80.0, 5)
+        slider(f, "intake.capture_aspect_ratio", "Yakalama AR", 1.0, 3.0, 1.5, 0.1)
+        slider(f, "intake.duct_length_m", "Kanal Uzunluğu (m)", 1.5, 4.0, 2.5, 0.1)
+        slider(f, "intake.lip_radius_mm", "Dudak Yarıçapı (mm)", 5, 30, 15.0, 1)
 
         # --- Exhaust ---
         f = section("Egzoz Nozulu")
@@ -584,6 +589,9 @@ class FighterCADApp(tk.Tk):
                 lip_sweep_deg=g("intake.lip_sweep_deg"),
                 station_pct=g("intake.station_pct"),
                 boundary_layer_diverter_mm=g("intake.boundary_layer_diverter_mm"),
+                capture_aspect_ratio=g("intake.capture_aspect_ratio"),
+                duct_length_m=g("intake.duct_length_m"),
+                lip_radius_mm=g("intake.lip_radius_mm"),
             ),
             exhaust=ExhaustParams(
                 nozzle_type=g("exhaust.nozzle_type"),

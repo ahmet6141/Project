@@ -103,6 +103,9 @@ class IntakeParams:
     lip_sweep_deg: float = 30.0
     station_pct: float = 0.30
     boundary_layer_diverter_mm: float = 80.0
+    capture_aspect_ratio: float = 1.5  # width/height of capture face
+    duct_length_m: float = 2.5  # intake duct length
+    lip_radius_mm: float = 15.0  # lip rounding radius
 
 
 # ---------------------------------------------------------------------------

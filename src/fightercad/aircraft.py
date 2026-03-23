@@ -158,15 +158,29 @@ class AircraftAssembler:
         sv[:, 0] += stab_x
         self.components["vertical_stabilizer"] = (sv, sf)
 
-        # 5. Intakes
+        # 5. Intakes (fuselage-aware positioning)
         self.intake_builder = IntakeBuilder(p.intake)
-        right_intake, left_intake = self.intake_builder.build()
         intake_x = L * p.intake.station_pct
-        for label, secs in [("intake_right", right_intake), ("intake_left", left_intake)]:
-            v = np.vstack(secs)
-            v[:, 0] += intake_x
-            _, f = self.intake_builder.get_mesh(secs)
-            self.components[label] = (v, f)
+        fuse_r_at_intake = self._get_fuselage_radius_at(intake_x)
+        right_intake, left_intake = self.intake_builder.build(
+            fuselage_radius=fuse_r_at_intake,
+        )
+        for label, secs, side in [
+            ("intake_right", right_intake, 1.0),
+            ("intake_left", left_intake, -1.0),
+        ]:
+            iv, i_f = self.intake_builder.get_mesh(secs)
+            iv[:, 0] += intake_x
+            self.components[label] = (iv, i_f)
+
+        # BLD splitter plates
+        for label, side in [("bld_right", 1.0), ("bld_left", -1.0)]:
+            bv, bf = self.intake_builder.build_bld_plate(
+                side=side, fuselage_radius=fuse_r_at_intake,
+            )
+            if len(bv) > 0:
+                bv[:, 0] += intake_x
+                self.components[label] = (bv, bf)
 
         # 6. Exhaust nozzle
         self.exhaust_builder = ExhaustBuilder(p.exhaust)
@@ -201,8 +215,33 @@ class AircraftAssembler:
 
         return areas
 
+    def _get_fuselage_radius_at(self, x: float) -> float:
+        """Get fuselage horizontal half-width at a given x station.
+
+        Interpolates from built fuselage sections.
+        """
+        if not self.fuselage_builder or not self.fuselage_builder.sections:
+            return self.params.fuselage.max_diameter_m / 2.0
+
+        sections = self.fuselage_builder.sections
+        if x <= sections[0].x:
+            return sections[0].radius_h
+        if x >= sections[-1].x:
+            return sections[-1].radius_h
+
+        for j in range(len(sections) - 1):
+            s0, s1 = sections[j], sections[j + 1]
+            if s0.x <= x <= s1.x:
+                frac = (x - s0.x) / (s1.x - s0.x) if (s1.x - s0.x) > 0 else 0.0
+                return s0.radius_h + frac * (s1.radius_h - s0.radius_h)
+
+        return sections[-1].radius_h
+
     def get_combined_mesh(self) -> tuple[np.ndarray, np.ndarray]:
-        """Combine all component meshes into a single mesh.
+        """Combine all component meshes into a single welded mesh.
+
+        Performs vertex welding: vertices within tolerance (1e-4 m) are
+        merged so that adjacent components share boundary vertices.
 
         Returns
         -------
@@ -222,8 +261,38 @@ class AircraftAssembler:
                 all_faces.append(f + offset)
             offset += len(v)
 
-        verts = np.vstack(all_verts) if all_verts else np.zeros((0, 3))
+        if not all_verts:
+            return np.zeros((0, 3)), np.zeros((0, 3), dtype=int)
+
+        verts = np.vstack(all_verts)
         faces = np.vstack(all_faces) if all_faces else np.zeros((0, 3), dtype=int)
+
+        # Vertex welding: merge coincident vertices
+        tolerance = 1e-4
+        n = len(verts)
+        if n > 0 and len(faces) > 0:
+            # Quantize to grid for fast duplicate detection
+            quantized = np.round(verts / tolerance).astype(np.int64)
+            # Use structured array for unique detection
+            dtype = np.dtype([('x', np.int64), ('y', np.int64), ('z', np.int64)])
+            structured = np.empty(n, dtype=dtype)
+            structured['x'] = quantized[:, 0]
+            structured['y'] = quantized[:, 1]
+            structured['z'] = quantized[:, 2]
+            _, inverse = np.unique(structured, return_inverse=True)
+            # Remap face indices
+            faces = inverse[faces]
+            # Compact vertices (keep unique only)
+            unique_mask = np.zeros(n, dtype=bool)
+            for new_idx in range(inverse.max() + 1):
+                first = np.where(inverse == new_idx)[0][0]
+                unique_mask[first] = True
+            # Build old→new index mapping
+            new_indices = np.cumsum(unique_mask) - 1
+            remap = new_indices[inverse]
+            verts = verts[unique_mask]
+            faces = remap[faces]
+
         return verts, faces
 
     def get_component_names(self) -> list[str]:

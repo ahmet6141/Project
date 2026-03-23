@@ -27,7 +27,7 @@ class BlendingOperator:
         fuselage_radius_h: float,
         fuselage_radius_v: float,
         side: float = 1.0,
-        n_blend_steps: int = 6,
+        n_blend_steps: int = 12,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Generate a smooth fairing mesh between wing root and fuselage surface.
 
@@ -61,16 +61,14 @@ class BlendingOperator:
             return np.zeros((0, 3)), np.zeros((0, 3), dtype=int)
 
         fillet_r = self.p.root_fillet_radius_mm / 1000.0  # mm → m
-        fairing_w = self.p.fairing_width_mm / 1000.0  # mm → m
 
         # Wing root profile (the innermost airfoil section)
         wing_pts = wing_root_sections.copy()
         n_pts = len(wing_pts)
 
-        # Fuselage surface profile at wing junction
-        # Create an elliptical cut on the fuselage at the wing root y-position
+        # Fuselage surface profile at wing junction using real section data
         fuse_profile = self._fuselage_surface_profile(
-            wing_pts, fuselage_radius_h, fuselage_radius_v, side,
+            wing_pts, fuselage_sections, fuselage_radius_h, fuselage_radius_v, side,
         )
 
         # Generate blending sections from fuselage surface to wing root
@@ -85,7 +83,7 @@ class BlendingOperator:
             # Fillet offset: maximum at t=0.5 (middle of blend), zero at ends
             fillet_offset = fillet_r * math.sin(t * math.pi)
 
-            # Interpolate between fuselage profile and wing profile
+            # Interpolate each point individually between fuselage and wing profiles
             blended = fuse_profile * (1.0 - t_smooth) + wing_pts * t_smooth
 
             # Apply fillet bulge (outward normal direction)
@@ -93,18 +91,9 @@ class BlendingOperator:
                 normals = self._compute_outward_normals(blended, side)
                 blended += normals * fillet_offset
 
-            # Spanwise position: from fuselage surface to wing root
-            y_fuse = fuselage_radius_h * side
-            y_wing = wing_pts[:, 1].mean()
-            y_blend = y_fuse + (y_wing - y_fuse) * t_smooth
-
-            # Adjust fairing width
-            width_factor = 1.0 + fairing_w * math.sin(t * math.pi)
-            blended[:, 1] = y_blend * width_factor
-
             blend_sections.append(blended)
 
-        # Build mesh from blend sections
+        # Build mesh from blend sections (with ring closure)
         verts, faces = self._sections_to_mesh(blend_sections)
         return verts, faces
 
@@ -178,32 +167,67 @@ class BlendingOperator:
     def _fuselage_surface_profile(
         self,
         wing_pts: np.ndarray,
+        fuselage_sections: list,
         radius_h: float,
         radius_v: float,
         side: float,
     ) -> np.ndarray:
         """Project wing root points onto the fuselage surface.
 
-        Creates a profile on the fuselage skin that matches the chordwise
-        extent of the wing root airfoil.
+        Uses actual fuselage section data when available to find the real
+        radius at each chordwise position. Falls back to the provided
+        radius_h/radius_v if sections are empty.
         """
         profile = wing_pts.copy()
 
+        # Build a lookup of fuselage x → (rh, rv) from actual sections
+        fuse_x_rh_rv = []
+        if fuselage_sections:
+            for sec in fuselage_sections:
+                fuse_x_rh_rv.append((sec.x, sec.radius_h, sec.radius_v))
+            fuse_x_rh_rv.sort(key=lambda t: t[0])
+
         for i in range(len(profile)):
-            # Map each wing point's z-coordinate to the fuselage surface
-            # at the given x-position, using the elliptical cross-section
+            x_pt = profile[i, 0]
             z = profile[i, 2]
+
+            # Get fuselage radius at this x-position
+            rh, rv = radius_h, radius_v
+            if fuse_x_rh_rv:
+                rh, rv = self._interpolate_fuselage_radius(fuse_x_rh_rv, x_pt)
+
             # Clamp z to fuselage envelope
-            z_clamped = np.clip(z, -radius_v * 0.95, radius_v * 0.95)
+            z_clamped = np.clip(z, -rv * 0.95, rv * 0.95)
             # Compute y on the fuselage ellipse: (y/rh)^2 + (z/rv)^2 = 1
-            if radius_v > 0:
-                y_fuse = radius_h * math.sqrt(max(0, 1.0 - (z_clamped / radius_v) ** 2))
+            if rv > 0:
+                y_fuse = rh * math.sqrt(max(0, 1.0 - (z_clamped / rv) ** 2))
             else:
-                y_fuse = radius_h
+                y_fuse = rh
             profile[i, 1] = y_fuse * side
             profile[i, 2] = z_clamped
 
         return profile
+
+    @staticmethod
+    def _interpolate_fuselage_radius(
+        fuse_data: list[tuple[float, float, float]], x: float
+    ) -> tuple[float, float]:
+        """Linearly interpolate fuselage rh, rv at a given x position."""
+        if not fuse_data:
+            return 0.0, 0.0
+        if x <= fuse_data[0][0]:
+            return fuse_data[0][1], fuse_data[0][2]
+        if x >= fuse_data[-1][0]:
+            return fuse_data[-1][1], fuse_data[-1][2]
+
+        for j in range(len(fuse_data) - 1):
+            x0, rh0, rv0 = fuse_data[j]
+            x1, rh1, rv1 = fuse_data[j + 1]
+            if x0 <= x <= x1:
+                frac = (x - x0) / (x1 - x0) if (x1 - x0) > 0 else 0.0
+                return rh0 + frac * (rh1 - rh0), rv0 + frac * (rv1 - rv0)
+
+        return fuse_data[-1][1], fuse_data[-1][2]
 
     def _compute_outward_normals(
         self, pts: np.ndarray, side: float
@@ -231,7 +255,10 @@ class BlendingOperator:
     def _sections_to_mesh(
         self, sections: list[np.ndarray]
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Convert a list of cross-section arrays to a triangle mesh."""
+        """Convert a list of cross-section arrays to a triangle mesh.
+
+        Uses modular indexing to close the ring (last point connects to first).
+        """
         if len(sections) < 2:
             return np.zeros((0, 3)), np.zeros((0, 3), dtype=int)
 
@@ -243,10 +270,11 @@ class BlendingOperator:
         for i in range(n_sec - 1):
             b0 = i * n_pts
             b1 = (i + 1) * n_pts
-            for j in range(n_pts - 1):
+            for j in range(n_pts):
+                j1 = (j + 1) % n_pts  # ring closure
                 v0 = b0 + j
-                v1 = b0 + j + 1
-                v2 = b1 + j + 1
+                v1 = b0 + j1
+                v2 = b1 + j1
                 v3 = b1 + j
                 faces.append([v0, v1, v2])
                 faces.append([v0, v2, v3])
