@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
@@ -30,7 +31,10 @@ from fightercad.aircraft import AircraftAssembler
 from fightercad.aero.drag import compute_drag, DragResult
 from fightercad.aero.lift import compute_CL_for_level_flight, compute_lift_curve_slope
 from fightercad.aero.stability import compute_stability, StabilityResult
-from fightercad.visualization.viewer3d import plot_aircraft_3d
+from fightercad.visualization.viewer3d import (
+    plot_aircraft_3d,
+    is_vtk_available,
+)
 from fightercad.visualization.plot2d import (
     plot_drag_polar,
     plot_area_distribution,
@@ -98,6 +102,7 @@ class ParamSlider(ttk.Frame):
         super().__init__(parent)
         self._var = tk.DoubleVar(value=default)
         self._updating = False
+        self._change_cb = None
 
         ttk.Label(self, text=label, width=22, anchor="w").pack(side="left")
         self.scale = ttk.Scale(
@@ -120,6 +125,8 @@ class ParamSlider(ttk.Frame):
         self.entry.delete(0, "end")
         self.entry.insert(0, f"{v:.4g}")
         self._updating = False
+        if self._change_cb:
+            self._change_cb()
 
     def _on_entry(self, _event: Any) -> None:
         if self._updating:
@@ -131,6 +138,12 @@ class ParamSlider(ttk.Frame):
         except ValueError:
             pass
         self._updating = False
+        if self._change_cb:
+            self._change_cb()
+
+    def on_change(self, callback) -> None:
+        """Register a callback for when the slider value changes."""
+        self._change_cb = callback
 
     def get(self) -> float:
         try:
@@ -195,6 +208,14 @@ class FighterCADApp(tk.Tk):
         self._drag_result: DragResult | None = None
         self._stability_result: StabilityResult | None = None
 
+        # VTK viewer (initialized in _create_layout)
+        self._vtk_viewer: Any = None
+        self._use_vtk = is_vtk_available()
+
+        # Debounce timer for live slider updates
+        self._debounce_id: str | None = None
+        self._generating = False
+
         self._create_menu()
         self._create_layout()
         self._create_status_bar()
@@ -249,6 +270,15 @@ class FighterCADApp(tk.Tk):
         self._fig_3d: plt.Figure | None = None
         self._canvas_3d: FigureCanvasTkAgg | None = None
 
+        # 3D view toolbar + viewer
+        self._create_3d_toolbar(self._tab_3d)
+        self._viewer_frame = ttk.Frame(self._tab_3d)
+        self._viewer_frame.pack(fill="both", expand=True)
+
+        if self._use_vtk:
+            from fightercad.visualization.viewer3d import VTKAircraftViewer
+            self._vtk_viewer = VTKAircraftViewer(self._viewer_frame)
+
         # Tab 2: Aero analysis
         self._tab_aero = ttk.Frame(self._notebook)
         self._notebook.add(self._tab_aero, text="Aerodinamik Analiz")
@@ -261,6 +291,112 @@ class FighterCADApp(tk.Tk):
         self._tab_mach = ttk.Frame(self._notebook)
         self._notebook.add(self._tab_mach, text="Mach Taraması")
 
+    # -- 3D view toolbar --
+    def _create_3d_toolbar(self, parent: ttk.Frame) -> None:
+        bar = ttk.Frame(parent)
+        bar.pack(fill="x", padx=2, pady=2)
+
+        # View presets
+        ttk.Label(bar, text="Gorunum:").pack(side="left", padx=(4, 2))
+        for preset, label in [("iso", "Izo"), ("top", "Ust"), ("front", "On"),
+                               ("side", "Yan"), ("rear", "Arka")]:
+            ttk.Button(
+                bar, text=label, width=5,
+                command=lambda p=preset: self._set_view_preset(p),
+            ).pack(side="left", padx=1)
+
+        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=6)
+
+        # Render mode
+        ttk.Label(bar, text="Mod:").pack(side="left", padx=(2, 2))
+        self._render_mode_var = tk.StringVar(value="solid")
+        for mode, label in [("solid", "Solid"), ("wireframe", "Wire"), ("solid_wire", "S+W")]:
+            ttk.Radiobutton(
+                bar, text=label, variable=self._render_mode_var, value=mode,
+                command=self._on_render_mode_change,
+            ).pack(side="left", padx=1)
+
+        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=6)
+
+        # Background toggle
+        self._bg_var = tk.StringVar(value="dark")
+        ttk.Checkbutton(
+            bar, text="Acik Arka Plan",
+            command=self._on_bg_toggle,
+        ).pack(side="left", padx=4)
+
+        # Reset camera
+        ttk.Button(bar, text="Sifirla", width=6, command=self._on_reset_camera).pack(side="left", padx=4)
+
+        # Mesh stats label
+        self._mesh_stats_var = tk.StringVar(value="")
+        ttk.Label(bar, textvariable=self._mesh_stats_var, font=("Consolas", 8)).pack(side="right", padx=4)
+
+        # Component visibility panel (collapsible)
+        vis_frame = ttk.LabelFrame(parent, text="Bilesen Gorunurluk", padding=2)
+        vis_frame.pack(fill="x", padx=2, pady=1)
+        self._vis_vars: dict[str, tk.BooleanVar] = {}
+        self._vis_frame = vis_frame
+
+    def _rebuild_visibility_panel(self) -> None:
+        """Rebuild component visibility checkboxes based on current components."""
+        for child in self._vis_frame.winfo_children():
+            child.destroy()
+
+        if not self._components:
+            return
+
+        display_names = {
+            "fuselage": "Govde",
+            "wing_right": "Sag Kanat",
+            "wing_left": "Sol Kanat",
+            "vertical_stabilizer": "V.Stabilizator",
+            "intake_right": "Sag Alik",
+            "intake_left": "Sol Alik",
+            "exhaust": "Egzoz",
+        }
+
+        for name in self._components:
+            var = tk.BooleanVar(value=True)
+            self._vis_vars[name] = var
+            label = display_names.get(name, name)
+            cb = ttk.Checkbutton(
+                self._vis_frame, text=label, variable=var,
+                command=lambda n=name: self._on_visibility_toggle(n),
+            )
+            cb.pack(side="left", padx=6)
+
+    def _set_view_preset(self, preset: str) -> None:
+        if self._vtk_viewer:
+            self._vtk_viewer.set_view(preset)
+
+    def _on_render_mode_change(self) -> None:
+        if self._vtk_viewer:
+            self._vtk_viewer.set_render_mode(self._render_mode_var.get())
+
+    def _on_bg_toggle(self) -> None:
+        if self._vtk_viewer:
+            current = self._vtk_viewer._bg_color
+            new = "light" if current == "dark" else "dark"
+            self._vtk_viewer.set_background(new)
+
+    def _on_reset_camera(self) -> None:
+        if self._vtk_viewer:
+            self._vtk_viewer.reset_camera()
+
+    def _on_visibility_toggle(self, name: str) -> None:
+        if self._vtk_viewer and name in self._vis_vars:
+            self._vtk_viewer.set_visibility(name, self._vis_vars[name].get())
+
+    def _update_mesh_stats(self) -> None:
+        if self._vtk_viewer and self._components:
+            tv, tf = self._vtk_viewer.get_total_stats()
+            self._mesh_stats_var.set(f"V:{tv:,}  F:{tf:,}")
+        elif self._components:
+            tv = sum(len(v) for v, _ in self._components.values())
+            tf = sum(len(f) for _, f in self._components.values())
+            self._mesh_stats_var.set(f"V:{tv:,}  F:{tf:,}")
+
     # -- Parameter panel --
     def _create_param_panel(self, parent: ttk.Frame) -> None:
         def section(title: str) -> ttk.LabelFrame:
@@ -271,6 +407,7 @@ class FighterCADApp(tk.Tk):
         def slider(frame: ttk.LabelFrame, key: str, label: str, lo: float, hi: float, default: float, res: float = 0.01) -> ParamSlider:
             w = ParamSlider(frame, label, lo, hi, default, res)
             w.pack(fill="x")
+            w.on_change(self._on_slider_changed)
             self._widgets[key] = w
             return w
 
@@ -471,16 +608,42 @@ class FighterCADApp(tk.Tk):
         self.update_idletasks()
 
     def _on_generate(self) -> None:
+        if self._generating:
+            return
+        self._generating = True
         self._set_status("Geometri oluşturuluyor...")
-        try:
-            params = self._collect_params()
-            self._assembler = AircraftAssembler(params)
-            self._components = self._assembler.build()
-            self._update_3d_view()
-            self._set_status(f"Oluşturuldu – {len(self._components)} bileşen.")
-        except Exception as exc:
-            messagebox.showerror("Hata", str(exc))
-            self._set_status("Hata oluştu.")
+
+        def worker():
+            try:
+                params = self._collect_params()
+                assembler = AircraftAssembler(params)
+                components = assembler.build()
+                self.after(0, self._apply_generated, assembler, components)
+            except Exception as exc:
+                self.after(0, self._on_generate_error, exc)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_generated(self, assembler, components) -> None:
+        """Apply generated geometry to the viewer (called from main thread)."""
+        self._assembler = assembler
+        self._components = components
+        self._generating = False
+        self._update_3d_view()
+        self._rebuild_visibility_panel()
+        self._update_mesh_stats()
+        self._set_status(f"Oluşturuldu – {len(self._components)} bileşen.")
+
+    def _on_generate_error(self, exc) -> None:
+        self._generating = False
+        messagebox.showerror("Hata", str(exc))
+        self._set_status("Hata oluştu.")
+
+    def _on_slider_changed(self) -> None:
+        """Debounced callback for live slider updates."""
+        if self._debounce_id is not None:
+            self.after_cancel(self._debounce_id)
+        self._debounce_id = self.after(200, self._on_generate)
 
     def _on_analyze(self) -> None:
         self._set_status("Aerodinamik analiz çalışıyor...")
@@ -634,18 +797,23 @@ class FighterCADApp(tk.Tk):
         if self._components is None:
             return
 
-        # Clear previous
-        for child in self._tab_3d.winfo_children():
+        # Use VTK viewer if available (incremental update, no widget destruction)
+        if self._use_vtk and self._vtk_viewer is not None:
+            self._vtk_viewer.set_components(self._components)
+            return
+
+        # Matplotlib fallback: clear and rebuild
+        for child in self._viewer_frame.winfo_children():
             child.destroy()
 
         fig = plt.figure(figsize=(8, 6))
         ax = fig.add_subplot(111, projection="3d")
         plot_aircraft_3d(self._components, ax=ax)
 
-        self._canvas_3d = FigureCanvasTkAgg(fig, master=self._tab_3d)
+        self._canvas_3d = FigureCanvasTkAgg(fig, master=self._viewer_frame)
         self._canvas_3d.draw()
         self._canvas_3d.get_tk_widget().pack(fill="both", expand=True)
-        toolbar = NavigationToolbar2Tk(self._canvas_3d, self._tab_3d)
+        toolbar = NavigationToolbar2Tk(self._canvas_3d, self._viewer_frame)
         toolbar.update()
         self._fig_3d = fig
 
