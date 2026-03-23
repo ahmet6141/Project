@@ -15,13 +15,27 @@ import numpy as np
 # Component color scheme (R, G, B) — no alpha needed for VTK
 COMPONENT_COLORS = {
     "fuselage": (0.7, 0.7, 0.75),
+    # Wing panels (inner/outer split)
+    "wing_inner_right": (0.2, 0.35, 0.75),
+    "wing_inner_left": (0.2, 0.35, 0.75),
+    "wing_outer_right": (0.25, 0.45, 0.85),
+    "wing_outer_left": (0.25, 0.45, 0.85),
+    # Control surfaces
+    "elevon_right": (0.7, 0.3, 0.3),
+    "elevon_left": (0.7, 0.3, 0.3),
+    "aileron_right": (0.8, 0.5, 0.2),
+    "aileron_left": (0.8, 0.5, 0.2),
+    # Legacy single-piece wing (backward compat)
     "wing_right": (0.2, 0.4, 0.8),
     "wing_left": (0.2, 0.4, 0.8),
     "vertical_stabilizer": (0.3, 0.7, 0.3),
+    # Intakes (side-mounted and chin)
     "intake_right": (0.8, 0.3, 0.2),
     "intake_left": (0.8, 0.3, 0.2),
+    "intake_chin": (0.8, 0.3, 0.2),
     "bld_right": (0.6, 0.6, 0.6),
     "bld_left": (0.6, 0.6, 0.6),
+    "bld_chin": (0.6, 0.6, 0.6),
     "exhaust": (0.9, 0.6, 0.1),
     "wing_root_fairing_right": (0.5, 0.5, 0.8),
     "wing_root_fairing_left": (0.5, 0.5, 0.8),

@@ -56,9 +56,8 @@ class AircraftAssembler:
         self.fuselage_builder = FuselageBuilder(p.fuselage)
         self.fuselage_builder.build()
 
-        # 2. Build wings
+        # 2. Build wings (panelled)
         self.wing_builder = WingBuilder(p.wing)
-        right_secs, left_secs = self.wing_builder.build()
 
         # Position wings on fuselage
         wing_x_offset = L * p.wing.wing_station_pct
@@ -72,7 +71,6 @@ class AircraftAssembler:
             )
             x_fuse, a_fuse = self.fuselage_builder.get_area_distribution()
 
-            # Estimate wing area contribution at fuselage stations
             half_span, root_c, tip_c = self.wing_builder._compute_planform()
             a_wing = self._estimate_wing_area_distribution(x_fuse, wing_x_offset, root_c, p.wing)
 
@@ -80,7 +78,6 @@ class AircraftAssembler:
                 x_fuse, a_fuse, a_wing, s_ref=p.wing.area_m2,
             )
 
-            # Rebuild fuselage with area-rule correction
             correction = self.area_rule_result["correction"]
             self.fuselage_builder.build(area_rule_correction=correction)
 
@@ -88,42 +85,74 @@ class AircraftAssembler:
         fv, ff = self.fuselage_builder.get_mesh()
         self.components["fuselage"] = (fv, ff)
 
-        # Wing meshes (offset to aircraft coordinates)
-        # Find fuselage radius at wing station for proper root placement
+        # Fuselage radii at wing station
         fuse_rh = fuse_r * (math.sqrt(p.fuselage.cross_section_aspect)
                             if p.fuselage.cross_section != "circular" else 1.0)
         fuse_rv = fuse_r / (math.sqrt(p.fuselage.cross_section_aspect)
                             if p.fuselage.cross_section != "circular" else 1.0)
 
-        for label, secs in [("wing_right", right_secs), ("wing_left", left_secs)]:
-            verts = np.vstack([s.points_3d for s in secs])
-            # Offset chordwise position
-            verts[:, 0] += wing_x_offset
-            # Offset wing root spanwise to fuselage surface
-            side = 1.0 if "right" in label else -1.0
-            root_y_offset = fuse_rh * side
-            verts[:, 1] += root_y_offset
-            # Simple mesh from sections
-            n_sec = len(secs)
-            n_pts = len(secs[0].points_3d)
-            faces = []
-            for i in range(n_sec - 1):
-                b0, b1 = i * n_pts, (i + 1) * n_pts
-                for j in range(n_pts - 1):
-                    faces.append([b0 + j, b0 + j + 1, b1 + j + 1])
-                    faces.append([b0 + j, b1 + j + 1, b1 + j])
-            self.components[label] = (verts, np.array(faces) if faces else np.zeros((0, 3), dtype=int))
+        # Build panelled wings with control surfaces
+        self._build_wing_panels(wing_x_offset, fuse_rh, fuse_rv)
 
-        # 7. Blending — wing-fuselage fairing
+        # 4. Vertical stabilizer
+        self.stab_builder = StabilizerBuilder(p.vertical_stabilizer)
+        stab_secs = self.stab_builder.build()
+        sv, sf = self.stab_builder.get_mesh()
+        stab_x = L * 0.82
+        sv[:, 0] += stab_x
+        self.components["vertical_stabilizer"] = (sv, sf)
+
+        # 5. Intakes
+        self._build_intakes(L, fuse_rh, fuse_rv)
+
+        # 6. Exhaust nozzle
+        self.exhaust_builder = ExhaustBuilder(p.exhaust)
+        self.exhaust_builder.build()
+        ev, ef = self.exhaust_builder.get_mesh()
+        ev[:, 0] += L - p.exhaust.nozzle_length_m
+        self.components["exhaust"] = (ev, ef)
+
+        return self.components
+
+    def _build_wing_panels(
+        self, wing_x_offset: float, fuse_rh: float, fuse_rv: float
+    ) -> None:
+        """Build inner/outer wing panels with control surfaces for both sides."""
+        p = self.params
+        cs = p.control_surfaces
+
         self.blending_op = BlendingOperator(p.blending)
 
-        for label, secs, side in [
-            ("wing_root_fairing_right", right_secs, 1.0),
-            ("wing_root_fairing_left", left_secs, -1.0),
-        ]:
-            if len(secs) > 0:
-                # Wing root airfoil points (innermost section)
-                wing_root_pts = secs[0].points_3d.copy()
+        for side_label, side in [("right", 1.0), ("left", -1.0)]:
+            inner_secs, outer_secs = self.wing_builder.build_half_wing_panels(side=side)
+
+            # Split control surfaces
+            inner_main, elevon_secs = self.wing_builder.split_control_surface(
+                inner_secs, cs.elevon_chord_pct, cs.elevon_span_pct,
+            )
+            outer_main, aileron_secs = self.wing_builder.split_control_surface(
+                outer_secs, cs.aileron_chord_pct, cs.aileron_span_pct,
+            )
+
+            # Generate meshes and offset to aircraft coordinates
+            for comp_name, secs in [
+                (f"wing_inner_{side_label}", inner_main),
+                (f"wing_outer_{side_label}", outer_main),
+                (f"elevon_{side_label}", elevon_secs),
+                (f"aileron_{side_label}", aileron_secs),
+            ]:
+                if not secs:
+                    continue
+                verts, faces = self.wing_builder.get_panel_mesh(secs)
+                if len(verts) == 0:
+                    continue
+                verts[:, 0] += wing_x_offset
+                verts[:, 1] += fuse_rh * side
+                self.components[comp_name] = (verts, faces)
+
+            # Wing-fuselage fairing (use inner panel root section)
+            if inner_main:
+                wing_root_pts = inner_main[0].points_3d.copy()
                 wing_root_pts[:, 0] += wing_x_offset
                 wing_root_pts[:, 1] += fuse_rh * side
 
@@ -136,12 +165,12 @@ class AircraftAssembler:
                     side=side,
                 )
                 if len(fv) > 0:
-                    self.components[label] = (fv, ff)
+                    self.components[f"wing_root_fairing_{side_label}"] = (fv, ff)
 
-        # Strake (if enabled)
+        # Strakes
         for label, side in [("strake_right", 1.0), ("strake_left", -1.0)]:
             sv, sf = self.blending_op.build_strake(
-                fuselage_length=L,
+                fuselage_length=self.params.fuselage.length_m,
                 wing_root_x=wing_x_offset,
                 fuselage_radius=fuse_rh,
                 side=side,
@@ -149,47 +178,58 @@ class AircraftAssembler:
             if len(sv) > 0:
                 self.components[label] = (sv, sf)
 
-        # 4. Vertical stabilizer
-        self.stab_builder = StabilizerBuilder(p.vertical_stabilizer)
-        stab_secs = self.stab_builder.build()
-        sv, sf = self.stab_builder.get_mesh()
-        # Position at rear of fuselage
-        stab_x = L * 0.82
-        sv[:, 0] += stab_x
-        self.components["vertical_stabilizer"] = (sv, sf)
-
-        # 5. Intakes (fuselage-aware positioning)
+    def _build_intakes(
+        self, fuselage_length: float, fuse_rh: float, fuse_rv: float
+    ) -> None:
+        """Build intake(s) based on intake_type (chin or side_mounted)."""
+        p = self.params
         self.intake_builder = IntakeBuilder(p.intake)
-        intake_x = L * p.intake.station_pct
+        intake_x = fuselage_length * p.intake.station_pct
         fuse_r_at_intake = self._get_fuselage_radius_at(intake_x)
-        right_intake, left_intake = self.intake_builder.build(
-            fuselage_radius=fuse_r_at_intake,
-        )
-        for label, secs, side in [
-            ("intake_right", right_intake, 1.0),
-            ("intake_left", left_intake, -1.0),
-        ]:
-            iv, i_f = self.intake_builder.get_mesh(secs)
-            iv[:, 0] += intake_x
-            self.components[label] = (iv, i_f)
+        fuse_rv_at_intake = self._get_fuselage_radius_v_at(intake_x)
 
-        # BLD splitter plates
-        for label, side in [("bld_right", 1.0), ("bld_left", -1.0)]:
+        if p.intake.intake_type == "chin":
+            # Single chin-mounted intake
+            chin_secs = self.intake_builder.build_single(
+                side=0.0,
+                fuselage_radius=fuse_r_at_intake,
+                fuselage_radius_v=fuse_rv_at_intake,
+            )
+            iv, i_f = self.intake_builder.get_mesh(chin_secs)
+            iv[:, 0] += intake_x
+            self.components["intake_chin"] = (iv, i_f)
+
+            # BLD plate
             bv, bf = self.intake_builder.build_bld_plate(
-                side=side, fuselage_radius=fuse_r_at_intake,
+                side=0.0,
+                fuselage_radius=fuse_r_at_intake,
+                fuselage_radius_v=fuse_rv_at_intake,
             )
             if len(bv) > 0:
                 bv[:, 0] += intake_x
-                self.components[label] = (bv, bf)
+                self.components["bld_chin"] = (bv, bf)
+        else:
+            # Dual side-mounted intakes
+            right_intake, left_intake = self.intake_builder.build(
+                fuselage_radius=fuse_r_at_intake,
+            )
+            for label, secs, side in [
+                ("intake_right", right_intake, 1.0),
+                ("intake_left", left_intake, -1.0),
+            ]:
+                if secs is None:
+                    continue
+                iv, i_f = self.intake_builder.get_mesh(secs)
+                iv[:, 0] += intake_x
+                self.components[label] = (iv, i_f)
 
-        # 6. Exhaust nozzle
-        self.exhaust_builder = ExhaustBuilder(p.exhaust)
-        self.exhaust_builder.build()
-        ev, ef = self.exhaust_builder.get_mesh()
-        ev[:, 0] += L - p.exhaust.nozzle_length_m
-        self.components["exhaust"] = (ev, ef)
-
-        return self.components
+            for label, side in [("bld_right", 1.0), ("bld_left", -1.0)]:
+                bv, bf = self.intake_builder.build_bld_plate(
+                    side=side, fuselage_radius=fuse_r_at_intake,
+                )
+                if len(bv) > 0:
+                    bv[:, 0] += intake_x
+                    self.components[label] = (bv, bf)
 
     def _estimate_wing_area_distribution(
         self,
@@ -205,13 +245,11 @@ class AircraftAssembler:
         for i, x in enumerate(x_stations):
             x_local = x - wing_x_offset
             if 0 <= x_local <= root_chord:
-                # Wing chord fraction at this station
                 chord_frac = x_local / root_chord
-                # Approximate local span and thickness
-                local_span = half_span * 2.0  # full span
-                t_pct = 5.0 / 100.0  # approximate thickness
+                local_span = half_span * 2.0
+                t_pct = 5.0 / 100.0
                 local_chord = root_chord * (1.0 - chord_frac * (1.0 - wing_params.taper_ratio))
-                areas[i] = 2.0 * local_span * local_chord * t_pct * 0.5  # approximate
+                areas[i] = 2.0 * local_span * local_chord * t_pct * 0.5
 
         return areas
 
@@ -236,6 +274,25 @@ class AircraftAssembler:
                 return s0.radius_h + frac * (s1.radius_h - s0.radius_h)
 
         return sections[-1].radius_h
+
+    def _get_fuselage_radius_v_at(self, x: float) -> float:
+        """Get fuselage vertical half-height at a given x station."""
+        if not self.fuselage_builder or not self.fuselage_builder.sections:
+            return self.params.fuselage.max_diameter_m / 2.0
+
+        sections = self.fuselage_builder.sections
+        if x <= sections[0].x:
+            return sections[0].radius_v
+        if x >= sections[-1].x:
+            return sections[-1].radius_v
+
+        for j in range(len(sections) - 1):
+            s0, s1 = sections[j], sections[j + 1]
+            if s0.x <= x <= s1.x:
+                frac = (x - s0.x) / (s1.x - s0.x) if (s1.x - s0.x) > 0 else 0.0
+                return s0.radius_v + frac * (s1.radius_v - s0.radius_v)
+
+        return sections[-1].radius_v
 
     def get_combined_mesh(self) -> tuple[np.ndarray, np.ndarray]:
         """Combine all component meshes into a single welded mesh.
@@ -271,23 +328,18 @@ class AircraftAssembler:
         tolerance = 1e-4
         n = len(verts)
         if n > 0 and len(faces) > 0:
-            # Quantize to grid for fast duplicate detection
             quantized = np.round(verts / tolerance).astype(np.int64)
-            # Use structured array for unique detection
             dtype = np.dtype([('x', np.int64), ('y', np.int64), ('z', np.int64)])
             structured = np.empty(n, dtype=dtype)
             structured['x'] = quantized[:, 0]
             structured['y'] = quantized[:, 1]
             structured['z'] = quantized[:, 2]
             _, inverse = np.unique(structured, return_inverse=True)
-            # Remap face indices
             faces = inverse[faces]
-            # Compact vertices (keep unique only)
             unique_mask = np.zeros(n, dtype=bool)
             for new_idx in range(inverse.max() + 1):
                 first = np.where(inverse == new_idx)[0][0]
                 unique_mask[first] = True
-            # Build old→new index mapping
             new_indices = np.cumsum(unique_mask) - 1
             remap = new_indices[inverse]
             verts = verts[unique_mask]

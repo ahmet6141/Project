@@ -62,6 +62,21 @@ class WingParams:
     # High-level thickness parameters
     thickness_to_chord_root: float = 0.05  # root t/c ratio (5%)
     thickness_to_chord_tip: float = 0.03  # tip t/c ratio (3%)
+    # Inner/outer panel split
+    inner_panel_span_pct: float = 0.35  # inner panel ends at 35% half-span
+    inner_panel_sweep_deg: float = 60.0  # inner panel LE sweep (steeper)
+
+
+# ---------------------------------------------------------------------------
+# Control surfaces
+# ---------------------------------------------------------------------------
+@dataclass
+class ControlSurfaceParams:
+    elevon_chord_pct: float = 0.20  # trailing-edge fraction for elevon (inner panel)
+    aileron_chord_pct: float = 0.25  # trailing-edge fraction for aileron (outer panel)
+    elevon_span_pct: float = 0.60  # fraction of inner panel span covered by elevon
+    aileron_span_pct: float = 0.50  # fraction of outer panel span covered by aileron
+    deflection_deg: float = 0.0  # neutral position
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +112,8 @@ class VerticalStabilizerParams:
 # ---------------------------------------------------------------------------
 @dataclass
 class IntakeParams:
-    intake_type: Literal["side_mounted", "chin", "dorsal", "dsi"] = "side_mounted"
+    intake_type: Literal["side_mounted", "chin", "dorsal", "dsi"] = "chin"
+    intake_count: int = 1  # 1 for chin/dorsal, 2 for side_mounted
     capture_area_m2: float = 0.45
     ramp_angle_deg: float = 7.0
     lip_sweep_deg: float = 30.0
@@ -155,6 +171,9 @@ class AircraftParams:
     blending: BlendingParams = field(default_factory=BlendingParams)
     vertical_stabilizer: VerticalStabilizerParams = field(
         default_factory=VerticalStabilizerParams
+    )
+    control_surfaces: ControlSurfaceParams = field(
+        default_factory=ControlSurfaceParams
     )
     intake: IntakeParams = field(default_factory=IntakeParams)
     exhaust: ExhaustParams = field(default_factory=ExhaustParams)
