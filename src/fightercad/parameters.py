@@ -217,122 +217,130 @@ class AircraftParams:
 def create_ucav_params() -> AircraftParams:
     """Create professional-grade delta-wing UCAV parameter set.
 
-    Based on nEUROn/X-47B/Taranis class UCAV design principles:
-    - Blended wing-body, no cockpit
-    - High LE sweep (55-65°), low aspect ratio
-    - Dorsal intake, V-tail or tailless
-    - Stealth features (saw-tooth TE, blunt TE)
+    Calibrated to nEUROn-class strike UCAV design (9.5m length, 12.5m span):
+    - BWB with smooth wing-body blend, no cockpit/canopy
+    - 53° LE sweep cranked delta (SACCON/nEUROn standard)
+    - Dorsal S-duct intake shielding engine face from ground radar
+    - V-tail at 40° cant for combined pitch/yaw authority
+    - Saw-tooth TE with edges aligned to LE sweep for RCS reduction
+    - Reflex camber at root for tailless pitch trim (Cm0 > 0)
+
+    Reference aircraft:
+    - nEUROn: L=9.5m, span=12.5m, MTOW=7000kg, M=0.8
+    - X-47B:  L=11.6m, span=18.9m, MTOW=20215kg, M=0.9+
+    - Taranis: L=12.4m, span=10m, MTOW=8000kg, M=0.9
+    - SACCON: L=12.3m, span=15.2m, LE sweep=53°
     """
     return AircraftParams(
         meta=MetaParams(
             name="Delta-Wing UCAV",
             aircraft_type="ucav",
-            design_mach=0.9,
-            design_altitude_m=10000.0,
+            design_mach=0.85,  # high-subsonic cruise (nEUROn/Taranis regime)
+            design_altitude_m=12000.0,  # 40,000 ft ceiling typical for strike UCAVs
         ),
         fuselage=FuselageParams(
-            length_m=11.0,
-            max_diameter_m=1.4,
-            nose_fineness_ratio=3.0,
-            nose_profile="haack",
-            haack_C=0.333,  # LV-Haack for smoother nose
-            aft_taper_ratio=0.45,
-            cockpit_station_pct=0.15,
+            length_m=10.0,  # nEUROn=9.5m, Taranis=12.4m — mid-range
+            max_diameter_m=1.5,  # ~15% of length (nEUROn body depth ~1.4m)
+            nose_fineness_ratio=2.8,  # blunter nose than fighter (stealth chine shaping)
+            nose_profile="ogive",  # tangent ogive: smooth curvature for low frontal RCS
+            haack_C=0.0,
+            aft_taper_ratio=0.35,  # aggressive tail narrowing for nozzle integration
+            cockpit_station_pct=0.12,  # avionics bay position (no cockpit)
             cross_section="elliptical",
-            cross_section_aspect=1.25,  # wider than tall
-            cylindrical_end_pct=0.65,  # shorter cylindrical section
-            aft_taper_power=2.5,  # smoother tail contour
-            nose_body_blend_pct=0.06,
-            tail_closure_radius_pct=0.20,
-            cross_section_aspect_nose=1.1,
-            cross_section_aspect_tail=1.5,  # flat tail for nozzle
-            canopy_enabled=False,  # no cockpit
+            cross_section_aspect=1.35,  # wide-flat body for BWB (width/height >1.3)
+            cylindrical_end_pct=0.55,  # BWB: short cylindrical, long blend to tail
+            aft_taper_power=2.0,  # quadratic taper (smooth, avoids sharp inflection)
+            nose_body_blend_pct=0.08,  # wider blend zone for seamless BWB nose merge
+            tail_closure_radius_pct=0.25,  # semi-blunt tail for flat exhaust nozzle
+            cross_section_aspect_nose=1.15,  # slightly oval nose for chine line
+            cross_section_aspect_tail=1.6,  # very flat tail (platypus-style exhaust)
+            canopy_enabled=False,  # UCAV: no cockpit
             canopy_height_mm=0.0,
             canopy_length_pct=0.0,
-            dorsal_spine_height_mm=0.0,  # smooth dorsal
+            dorsal_spine_height_mm=0.0,  # smooth upper surface required for dorsal intake
         ),
         wing=WingParams(
             planform="cropped_delta",
-            span_m=12.5,  # wide span for BWB
-            area_m2=55.0,  # large wing area (BWB)
-            aspect_ratio=2.8,
-            taper_ratio=0.06,  # very tapered
-            leading_edge_sweep_deg=55.0,
-            trailing_edge_sweep_deg=25.0,  # positive TE sweep aligned toward LE angle
-            dihedral_deg=-2.0,
-            twist_deg=-3.0,
-            root_airfoil="naca64a004",
-            tip_airfoil="biconvex_3",
-            leading_edge_radius_mm=3.0,  # slightly rounded LE
-            wing_station_pct=0.35,  # forward wing position (BWB)
-            incidence_deg=2.0,
-            thickness_to_chord_root=0.12,  # thick root for BWB structure + payload
-            thickness_to_chord_tip=0.09,  # moderate tip for wave drag balance
-            camber_root_pct=1.5,  # slight camber for subsonic efficiency
-            camber_tip_pct=0.0,
-            te_thickness_mm=1.0,  # blunt TE for stealth
-            sawtooth_te_enabled=True,  # serrated TE
-            sawtooth_depth_mm=60.0,  # sized for X-band wavelength (~3cm)
-            sawtooth_count=12,
-            inner_panel_span_pct=0.30,
-            inner_panel_sweep_deg=60.0,
+            span_m=12.5,  # nEUROn=12.5m, gives L/span≈0.80
+            area_m2=48.0,  # wing loading ~145 kg/m² at MTOW 7000kg
+            aspect_ratio=3.25,  # AR=span²/area=156/48≈3.25 (SACCON≈3.1)
+            taper_ratio=0.08,  # near-pointed tips (nEUROn ≈ 0.05-0.10)
+            leading_edge_sweep_deg=53.0,  # SACCON standard, nEUROn ~55°
+            trailing_edge_sweep_deg=20.0,  # aligned: TE edges at ~20° (planform alignment)
+            dihedral_deg=-1.5,  # slight anhedral (typical BWB UCAV: -1 to -3°)
+            twist_deg=-4.0,  # stronger washout for tailless pitch trim
+            root_airfoil="naca64a004",  # modified supercritical-type base
+            tip_airfoil="biconvex_3",  # thin supersonic section at tips
+            leading_edge_radius_mm=4.0,  # rounder LE for subsonic efficiency (not fighter-sharp)
+            wing_station_pct=0.30,  # forward wing root (BWB: wing starts early on body)
+            incidence_deg=2.5,  # higher incidence for cruise lift without AoA
+            thickness_to_chord_root=0.14,  # 14% root t/c (BWB centerbody volume)
+            thickness_to_chord_tip=0.09,  # 9% tip (wave drag + structural minimum)
+            camber_root_pct=2.0,  # reflex camber at root for Cm0>0 tailless trim
+            camber_tip_pct=-0.5,  # negative (reflex) at tip for pitch trim
+            te_thickness_mm=1.5,  # blunt TE: 0.5-1% chord for stealth/structural
+            sawtooth_te_enabled=True,
+            sawtooth_depth_mm=50.0,  # ~1.5× X-band wavelength for effective scattering
+            sawtooth_count=14,  # teeth aligned with LE sweep angle
+            inner_panel_span_pct=0.28,  # cranked delta break at ~28% semi-span (SACCON: 29%)
+            inner_panel_sweep_deg=58.0,  # steeper inboard panel (nEUROn inboard ~55-60°)
         ),
         blending=BlendingParams(
-            root_fillet_radius_mm=80.0,  # large fillet for BWB
-            leading_edge_fillet_mm=30.0,
-            trailing_edge_fillet_mm=20.0,
+            root_fillet_radius_mm=120.0,  # very large BWB blend radius
+            leading_edge_fillet_mm=40.0,  # smooth LE junction (chine blending)
+            trailing_edge_fillet_mm=25.0,
             blending_mode="smooth",
-            strake_length_m=1.2,  # LEX for vortex lift
-            strake_sweep_deg=72.0,
-            fairing_width_mm=200.0,  # wide fairing for BWB blend
-            stabilizer_root_fillet_mm=20.0,
-            intake_fuselage_fillet_mm=25.0,
+            strake_length_m=0.8,  # short LEX blended into forebody chine
+            strake_sweep_deg=68.0,  # high sweep, blended (not protruding)
+            fairing_width_mm=300.0,  # 300mm wide fairing for BWB blend zone
+            stabilizer_root_fillet_mm=25.0,
+            intake_fuselage_fillet_mm=30.0,  # smooth intake-body junction
         ),
         vertical_stabilizer=VerticalStabilizerParams(
-            area_m2=2.5,  # small V-tail
-            aspect_ratio=1.0,
-            sweep_deg=45.0,
-            taper_ratio=0.30,
+            area_m2=1.8,  # ~3.75% of wing area per fin (small for stealth)
+            aspect_ratio=1.1,  # low AR V-tail fins (stubby for RCS)
+            sweep_deg=50.0,  # LE aligned with wing LE ±3° for RCS
+            taper_ratio=0.35,  # moderate taper
             cant_deg=0.0,
-            v_tail=True,  # dual V-tail fins
-            v_tail_cant_deg=40.0,
+            v_tail=True,
+            v_tail_cant_deg=45.0,  # 45° from vertical (B-2/YF-23 range)
             tailless=False,
         ),
         control_surfaces=ControlSurfaceParams(
-            elevon_chord_pct=0.25,  # larger elevons for pitch+roll
-            aileron_chord_pct=0.20,
-            elevon_span_pct=0.70,  # wide elevon coverage
-            aileron_span_pct=0.40,
+            elevon_chord_pct=0.25,  # 25% chord elevons (pitch + roll authority)
+            aileron_chord_pct=0.20,  # 20% chord outboard ailerons
+            elevon_span_pct=0.65,  # 65% of inboard panel span
+            aileron_span_pct=0.45,  # 45% of outboard panel span
             deflection_deg=0.0,
         ),
         intake=IntakeParams(
-            intake_type="dorsal",  # top-mounted for stealth
+            intake_type="dorsal",  # top-mounted: shields compressor from ground radar
             intake_count=1,
-            capture_area_m2=0.35,
-            ramp_angle_deg=5.0,
-            lip_sweep_deg=35.0,
-            station_pct=0.25,
-            boundary_layer_diverter_mm=60.0,
-            capture_aspect_ratio=2.0,  # wide and flat
-            duct_length_m=3.0,
-            lip_radius_mm=20.0,
+            capture_area_m2=0.32,  # sized for ~50kN class engine (M88/Adour)
+            ramp_angle_deg=4.0,  # gentle compression for subsonic cruise
+            lip_sweep_deg=40.0,  # swept lip aligned to planform edges
+            station_pct=0.22,  # 22% of fuselage (behind avionics, ahead of wing root)
+            boundary_layer_diverter_mm=50.0,  # thinner BLD for subsonic (less BL buildup)
+            capture_aspect_ratio=2.5,  # very wide, flat dorsal opening
+            duct_length_m=2.8,  # S-duct: sufficient length for 60-90° total turn
+            lip_radius_mm=25.0,  # generous lip radius for subsonic (no shock interaction)
         ),
         exhaust=ExhaustParams(
-            nozzle_type="convergent",  # simpler nozzle for subsonic UCAV
-            exit_diameter_m=0.60,
-            throat_diameter_m=0.55,
-            nozzle_length_m=0.9,
+            nozzle_type="convergent",  # subsonic UCAV: simple convergent nozzle
+            exit_diameter_m=0.55,  # sized for engine class (~M88: 0.55m)
+            throat_diameter_m=0.50,
+            nozzle_length_m=1.0,  # short nozzle, shielded by aft fuselage
         ),
         area_rule=AreaRuleParams(
             enabled=True,
-            target_mach=0.9,
-            waist_station_pct=0.50,
-            smoothing_iterations=8,
+            target_mach=0.85,  # optimize for cruise Mach
+            waist_station_pct=0.48,  # slightly forward of mid-body
+            smoothing_iterations=10,  # more iterations for smoother distribution
         ),
         internal_structure=InternalStructureParams(
-            engine_bay_station_pct=0.55,
-            engine_bay_length_pct=0.20,
-            fuel_tank_volume_pct=0.35,
+            engine_bay_station_pct=0.52,  # engine bay centered at 52% of length
+            engine_bay_length_pct=0.22,  # 22% of fuselage for engine + accessories
+            fuel_tank_volume_pct=0.30,  # 30% of internal volume for fuel
             weapons_bay_enabled=True,
         ),
     )
