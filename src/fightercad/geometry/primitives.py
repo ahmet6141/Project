@@ -14,6 +14,68 @@ import numpy as np
 
 
 # ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _apply_le_radius(
+    y_half: np.ndarray, x: np.ndarray, chord: float, le_radius_mm: float
+) -> np.ndarray:
+    """Apply leading-edge radius blending to an airfoil half-thickness.
+
+    Creates a smooth transition from the sharp theoretical LE to the
+    airfoil's thickness distribution using a sqrt-blend within a small zone.
+    """
+    le_r = le_radius_mm / 1000.0
+    if le_r <= 0 or chord <= 0:
+        return y_half
+    blend_zone = min(le_r * 4, chord * 0.05)
+    mask = x < blend_zone
+    if np.any(mask):
+        t_local = x[mask] / blend_zone
+        y_half[mask] = y_half[mask] * np.sqrt(t_local + 1e-12)
+    return y_half
+
+
+def _apply_camber(
+    upper_y: np.ndarray,
+    lower_y: np.ndarray,
+    x: np.ndarray,
+    chord: float,
+    camber_pct: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Add parabolic camber to upper and lower surfaces.
+
+    Camber line: yc = 4 * camber_max * (x/c) * (1 - x/c)
+    """
+    if abs(camber_pct) < 1e-6:
+        return upper_y, lower_y
+    camber_max = camber_pct / 100.0 * chord
+    x_norm = x / chord
+    yc = 4.0 * camber_max * x_norm * (1.0 - x_norm)
+    return upper_y + yc, lower_y + yc
+
+
+def _apply_blunt_te(
+    upper: np.ndarray, lower: np.ndarray, te_thickness_mm: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Offset trailing-edge points to create a blunt TE."""
+    if te_thickness_mm <= 0:
+        return upper, lower
+    half_te = te_thickness_mm / 1000.0 / 2.0
+    upper[-1, 1] = half_te
+    lower[-1, 1] = -half_te
+    # Blend last 10% of points for smooth transition
+    n = len(upper)
+    blend_n = max(2, n // 10)
+    for i in range(blend_n):
+        t = (i + 1) / blend_n
+        idx = -(blend_n - i)
+        upper[idx, 1] += half_te * t * t
+        lower[idx, 1] -= half_te * t * t
+    return upper, lower
+
+
+# ---------------------------------------------------------------------------
 # Airfoil coordinate generators  (return Nx2 numpy arrays)
 # ---------------------------------------------------------------------------
 
@@ -22,6 +84,8 @@ def biconvex_airfoil(
     thickness_pct: float,
     le_radius_mm: float = 1.5,
     num_points: int = 80,
+    camber_pct: float = 0.0,
+    te_thickness_mm: float = 0.0,
 ) -> np.ndarray:
     """Generate a biconvex (symmetric lens) supersonic airfoil.
 
@@ -37,6 +101,10 @@ def biconvex_airfoil(
         Leading-edge radius in mm.  A small circular arc is blended at x=0.
     num_points : int
         Points per surface (upper + lower).
+    camber_pct : float
+        Camber as percentage of chord (0 = symmetric).
+    te_thickness_mm : float
+        Blunt trailing-edge thickness in mm (0 = sharp).
 
     Returns
     -------
@@ -48,17 +116,20 @@ def biconvex_airfoil(
     x = np.linspace(0, chord, num_points)
     y_half = 2.0 * t_max * (x / chord) * (1.0 - x / chord)
 
-    # Apply tiny LE radius blending for the first few points
-    le_r = le_radius_mm / 1000.0
-    if le_r > 0:
-        blend_zone = min(le_r * 4, chord * 0.05)
-        mask = x < blend_zone
-        if np.any(mask):
-            t_local = x[mask] / blend_zone
-            y_half[mask] = y_half[mask] * np.sqrt(t_local + 1e-12)
+    # Apply LE radius blending
+    y_half = _apply_le_radius(y_half, x, chord, le_radius_mm)
 
-    upper = np.column_stack([x, y_half])
-    lower = np.column_stack([x, -y_half])
+    upper_y, lower_y = y_half.copy(), -y_half.copy()
+
+    # Camber
+    upper_y, lower_y = _apply_camber(upper_y, lower_y, x, chord, camber_pct)
+
+    upper = np.column_stack([x, upper_y])
+    lower = np.column_stack([x, lower_y])
+
+    # Blunt TE
+    upper, lower = _apply_blunt_te(upper, lower, te_thickness_mm)
+
     # Close the profile: upper TE -> LE -> lower LE -> TE
     coords = np.vstack([upper, lower[::-1]])
     return coords
@@ -69,6 +140,9 @@ def diamond_airfoil(
     thickness_pct: float,
     peak_x_pct: float = 40.0,
     num_points: int = 80,
+    le_radius_mm: float = 0.0,
+    camber_pct: float = 0.0,
+    te_thickness_mm: float = 0.0,
 ) -> np.ndarray:
     """Generate a diamond (double-wedge) supersonic airfoil.
 
@@ -82,6 +156,12 @@ def diamond_airfoil(
         Chordwise position of max thickness as percentage (e.g. 40).
     num_points : int
         Points per surface.
+    le_radius_mm : float
+        Leading-edge radius in mm (0 = sharp).
+    camber_pct : float
+        Camber as percentage of chord.
+    te_thickness_mm : float
+        Blunt trailing-edge thickness in mm.
     """
     t_max = chord * thickness_pct / 100.0
     x_peak = chord * peak_x_pct / 100.0
@@ -97,8 +177,16 @@ def diamond_airfoil(
         t_max * (chord - x) / (chord - x_peak),
     )
 
-    upper = np.column_stack([x, y_half])
-    lower = np.column_stack([x, -y_half])
+    # Apply LE radius blending
+    y_half = _apply_le_radius(y_half, x, chord, le_radius_mm)
+
+    upper_y, lower_y = y_half.copy(), -y_half.copy()
+    upper_y, lower_y = _apply_camber(upper_y, lower_y, x, chord, camber_pct)
+
+    upper = np.column_stack([x, upper_y])
+    lower = np.column_stack([x, lower_y])
+    upper, lower = _apply_blunt_te(upper, lower, te_thickness_mm)
+
     return np.vstack([upper, lower[::-1]])
 
 
@@ -106,6 +194,9 @@ def naca_4digit_symmetric(
     chord: float,
     thickness_pct: float,
     num_points: int = 80,
+    le_radius_mm: float = 0.0,
+    camber_pct: float = 0.0,
+    te_thickness_mm: float = 0.0,
 ) -> np.ndarray:
     """Generate a symmetric NACA 4-digit airfoil (e.g. NACA 0004)."""
     t = thickness_pct / 100.0
@@ -122,8 +213,17 @@ def naca_4digit_symmetric(
         - 0.1015 * xc**4
     )
 
-    upper = np.column_stack([x, yt])
-    lower = np.column_stack([x, -yt])
+    # Apply LE radius blending (optional override)
+    if le_radius_mm > 0:
+        yt = _apply_le_radius(yt, x, chord, le_radius_mm)
+
+    upper_y, lower_y = yt.copy(), -yt.copy()
+    upper_y, lower_y = _apply_camber(upper_y, lower_y, x, chord, camber_pct)
+
+    upper = np.column_stack([x, upper_y])
+    lower = np.column_stack([x, lower_y])
+    upper, lower = _apply_blunt_te(upper, lower, te_thickness_mm)
+
     return np.vstack([upper, lower[::-1]])
 
 
@@ -132,24 +232,51 @@ def get_airfoil(
     chord: float,
     le_radius_mm: float = 1.5,
     num_points: int = 80,
+    thickness_override: float | None = None,
+    camber_pct: float = 0.0,
+    te_thickness_mm: float = 0.0,
 ) -> np.ndarray:
     """Get airfoil coordinates by type string.
 
     Type format: '{family}_{thickness_pct}' e.g. 'biconvex_5', 'diamond_4'.
     Special: 'naca64a004' maps to NACA 0004 thin symmetric.
+
+    Parameters
+    ----------
+    thickness_override : float or None
+        If given, overrides the thickness parsed from airfoil_type.
+        This enables continuous spanwise thickness interpolation.
+    camber_pct : float
+        Camber as percentage of chord (0 = symmetric).
+    te_thickness_mm : float
+        Blunt TE thickness in mm (0 = sharp).
     """
     if airfoil_type.startswith("biconvex_"):
         tpct = float(airfoil_type.split("_")[1])
-        return biconvex_airfoil(chord, tpct, le_radius_mm, num_points)
+        if thickness_override is not None:
+            tpct = thickness_override * 100.0
+        return biconvex_airfoil(chord, tpct, le_radius_mm, num_points,
+                                camber_pct, te_thickness_mm)
     elif airfoil_type.startswith("diamond_"):
         tpct = float(airfoil_type.split("_")[1])
-        return diamond_airfoil(chord, tpct, num_points=num_points)
+        if thickness_override is not None:
+            tpct = thickness_override * 100.0
+        return diamond_airfoil(chord, tpct, num_points=num_points,
+                               le_radius_mm=le_radius_mm,
+                               camber_pct=camber_pct,
+                               te_thickness_mm=te_thickness_mm)
     elif airfoil_type.startswith("naca"):
         tpct = float(airfoil_type[-2:]) / 10.0  # e.g. '04' -> 4.0
-        return naca_4digit_symmetric(chord, tpct, num_points)
+        if thickness_override is not None:
+            tpct = thickness_override * 100.0
+        return naca_4digit_symmetric(chord, tpct, num_points,
+                                     le_radius_mm=le_radius_mm,
+                                     camber_pct=camber_pct,
+                                     te_thickness_mm=te_thickness_mm)
     else:
         # Fallback to biconvex 5%
-        return biconvex_airfoil(chord, 5.0, le_radius_mm, num_points)
+        return biconvex_airfoil(chord, 5.0, le_radius_mm, num_points,
+                                camber_pct, te_thickness_mm)
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +322,7 @@ def ogive_radius(
 ) -> np.ndarray:
     """Tangent ogive nose profile."""
     rho = (max_radius**2 + length**2) / (2.0 * max_radius)
-    r = np.sqrt(rho**2 - (length - x_stations) ** 2) + max_radius - rho
+    r = np.sqrt(np.maximum(rho**2 - (length - x_stations) ** 2, 0.0)) + max_radius - rho
     return np.clip(r, 0, max_radius)
 
 

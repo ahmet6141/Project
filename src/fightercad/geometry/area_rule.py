@@ -110,8 +110,9 @@ def compute_waisting_correction(
     delta_area = actual_area - ideal
 
     # Convert area delta to radius delta: delta_r = delta_A / (2πr)
-    # Use current average radius estimate
-    r_avg = np.sqrt(actual_area / math.pi + 1e-6)
+    # Use current average radius estimate (supports elliptical cross-sections
+    # by using the geometric mean radius: r = sqrt(A/π))
+    r_avg = np.sqrt(np.maximum(actual_area, 0.0) / math.pi + 1e-6)
     delta_r = -delta_area / (2.0 * math.pi * r_avg + 1e-6)
 
     # Smooth the correction

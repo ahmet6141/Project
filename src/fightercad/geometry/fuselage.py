@@ -1,8 +1,8 @@
 """Fuselage geometry generation with Sears-Haack and other nose profiles.
 
 Generates a lofted fuselage body as a list of cross-section rings (3D points).
-When pythonocc is available, produces TopoDS_Shape via BRepOffsetAPI_ThruSections.
-Without pythonocc, returns mesh data (vertices, faces) for visualization.
+Supports variable cross-section aspect ratio, canopy bump, dorsal spine,
+smooth aft taper, and cosine-distributed sections for high-quality output.
 """
 
 from __future__ import annotations
@@ -25,20 +25,160 @@ class FuselageSection:
     points: np.ndarray  # (N, 3) ring of points
 
 
+def _smoothstep(t: float) -> float:
+    """Hermite smooth-step: 3t² - 2t³ for t in [0,1]."""
+    t = max(0.0, min(1.0, t))
+    return t * t * (3.0 - 2.0 * t)
+
+
 class FuselageBuilder:
     """Build fuselage geometry from parameters.
 
     The fuselage is divided into three zones:
       1. Nose: from tip to max-diameter station (governed by nose profile)
       2. Cylindrical: constant max diameter section
-      3. Aft taper: from max diameter to tail
+      3. Aft taper: smooth power-curve reduction to tail
     """
 
-    def __init__(self, params: FuselageParams, n_sections: int = 40, n_ring: int = 36):
+    def __init__(self, params: FuselageParams, n_sections: int = 80, n_ring: int = 48):
         self.p = params
         self.n_sections = n_sections
         self.n_ring = n_ring
         self.sections: list[FuselageSection] = []
+
+    def _build_x_stations(self) -> np.ndarray:
+        """Build cosine-clustered axial stations (denser at nose and tail)."""
+        p = self.p
+        L = p.length_m
+        nose_len = p.nose_fineness_ratio * p.max_diameter_m
+        cyl_end = L * p.cylindrical_end_pct
+
+        # Allocate sections: 30% nose, 40% body, 30% tail
+        n_nose = max(8, int(self.n_sections * 0.30))
+        n_tail = max(8, int(self.n_sections * 0.30))
+        n_body = self.n_sections - n_nose - n_tail
+
+        # Nose: cosine clustering (denser near tip)
+        t_nose = 0.5 * (1.0 - np.cos(np.linspace(0, math.pi, n_nose)))
+        x_nose = t_nose * nose_len
+
+        # Body: uniform
+        x_body = np.linspace(nose_len, cyl_end, n_body + 2)[1:-1]
+
+        # Tail: cosine clustering (denser near tail end)
+        t_tail = 0.5 * (1.0 - np.cos(np.linspace(0, math.pi, n_tail)))
+        x_tail = cyl_end + t_tail * (L - cyl_end)
+
+        x_all = np.unique(np.concatenate([x_nose, x_body, x_tail]))
+        # Ensure first and last stations are exactly 0 and L
+        if x_all[0] > 0:
+            x_all = np.concatenate([[0.0], x_all])
+        if x_all[-1] < L:
+            x_all = np.concatenate([x_all, [L]])
+        return x_all
+
+    def _compute_radius(self, x: float, R: float, nose_len: float) -> float:
+        """Compute fuselage radius at axial position x."""
+        p = self.p
+        L = p.length_m
+        cyl_end = L * p.cylindrical_end_pct
+        blend_len = L * p.nose_body_blend_pct
+
+        if x <= nose_len - blend_len:
+            # Pure nose zone
+            r_arr = get_nose_profile(
+                p.nose_profile, np.array([x]), nose_len, R, p.haack_C,
+            )
+            return float(r_arr[0])
+        elif x <= nose_len + blend_len:
+            # Nose-to-body blending zone
+            r_nose = float(get_nose_profile(
+                p.nose_profile, np.array([x]), nose_len, R, p.haack_C,
+            )[0])
+            t_blend = (x - (nose_len - blend_len)) / (2.0 * blend_len) if blend_len > 0 else 1.0
+            return r_nose * (1.0 - _smoothstep(t_blend)) + R * _smoothstep(t_blend)
+        elif x <= cyl_end:
+            # Cylindrical zone
+            return R
+        else:
+            # Aft taper (power-curve)
+            t = (x - cyl_end) / (L - cyl_end) if (L - cyl_end) > 0 else 1.0
+            t_smooth = t ** p.aft_taper_power
+            r_tail = R * p.aft_taper_ratio
+            # Tail closure: further reduce at very end
+            tail_r_min = R * p.tail_closure_radius_pct * p.aft_taper_ratio
+            r_end = max(tail_r_min, 0.005)  # minimum 5mm radius
+            r_base = R * (1.0 - t_smooth * (1.0 - p.aft_taper_ratio))
+            return r_base
+
+    def _compute_aspect(self, x: float) -> float:
+        """Compute cross-section aspect ratio at axial position x (varies along length)."""
+        p = self.p
+        L = p.length_m
+        nose_len = p.nose_fineness_ratio * p.max_diameter_m
+        cyl_end = L * p.cylindrical_end_pct
+        x_frac = x / L
+
+        if x <= nose_len:
+            # Nose: interpolate from nose aspect to body aspect
+            t = x / nose_len if nose_len > 0 else 1.0
+            return p.cross_section_aspect_nose + _smoothstep(t) * (p.cross_section_aspect - p.cross_section_aspect_nose)
+        elif x <= cyl_end:
+            return p.cross_section_aspect
+        else:
+            # Tail: interpolate to tail aspect
+            t = (x - cyl_end) / (L - cyl_end) if (L - cyl_end) > 0 else 1.0
+            return p.cross_section_aspect + _smoothstep(t) * (p.cross_section_aspect_tail - p.cross_section_aspect)
+
+    def _apply_canopy(
+        self, pts: np.ndarray, x: float, theta: np.ndarray
+    ) -> np.ndarray:
+        """Apply canopy bump to upper surface of cross-section points."""
+        p = self.p
+        if not p.canopy_enabled or p.canopy_height_mm <= 0:
+            return pts
+        L = p.length_m
+        canopy_start = L * p.cockpit_station_pct
+        canopy_end = canopy_start + L * p.canopy_length_pct
+
+        if x < canopy_start or x > canopy_end:
+            return pts
+
+        t_canopy = (x - canopy_start) / (canopy_end - canopy_start)
+        bump = (p.canopy_height_mm / 1000.0) * math.sin(math.pi * t_canopy)
+
+        # Apply only to upper half (sin(theta) > 0), weighted by sin(theta)
+        sin_t = np.sin(theta)
+        upper_mask = sin_t > 0
+        pts[upper_mask, 2] += bump * sin_t[upper_mask]
+
+        return pts
+
+    def _apply_dorsal_spine(
+        self, pts: np.ndarray, x: float, theta: np.ndarray
+    ) -> np.ndarray:
+        """Apply dorsal spine height to top of fuselage."""
+        p = self.p
+        if p.dorsal_spine_height_mm <= 0:
+            return pts
+        L = p.length_m
+        # Spine runs from 30% to 85% of fuselage
+        spine_start = L * 0.30
+        spine_end = L * 0.85
+        if x < spine_start or x > spine_end:
+            return pts
+
+        t = (x - spine_start) / (spine_end - spine_start)
+        # Peak at ~50% of spine, smooth sin distribution
+        spine_h = (p.dorsal_spine_height_mm / 1000.0) * math.sin(math.pi * t)
+
+        # Apply to top sector (narrow band around theta=π/2)
+        sin_t = np.sin(theta)
+        top_mask = sin_t > 0.7  # top ~45° sector
+        weight = np.clip((sin_t[top_mask] - 0.7) / 0.3, 0, 1)
+        pts[top_mask, 2] += spine_h * weight
+
+        return pts
 
     def build(self, area_rule_correction: np.ndarray | None = None) -> list[FuselageSection]:
         """Generate fuselage cross-sections.
@@ -58,55 +198,42 @@ class FuselageBuilder:
         L = p.length_m
         nose_len = p.nose_fineness_ratio * p.max_diameter_m
 
-        # Axial stations
-        x_all = np.linspace(0, L, self.n_sections)
+        # Build axial stations (cosine-clustered)
+        x_all = self._build_x_stations()
+        n_actual = len(x_all)
 
         # Compute radius at each station
-        radii = np.zeros(self.n_sections)
-        for i, x in enumerate(x_all):
-            if x <= nose_len:
-                # Nose zone
-                r_arr = get_nose_profile(
-                    p.nose_profile,
-                    np.array([x]),
-                    nose_len,
-                    R,
-                    p.haack_C,
-                )
-                radii[i] = r_arr[0]
-            elif x <= L * 0.75:
-                # Cylindrical zone (max radius)
-                radii[i] = R
-            else:
-                # Aft taper zone
-                t = (x - L * 0.75) / (L * 0.25)
-                radii[i] = R * (1.0 - t * (1.0 - p.aft_taper_ratio))
+        radii = np.array([self._compute_radius(x, R, nose_len) for x in x_all])
 
         # Apply area-rule correction if provided
         if area_rule_correction is not None:
             n_corr = len(area_rule_correction)
-            if n_corr == self.n_sections:
-                radii = np.maximum(radii + area_rule_correction, 0.01)
+            if n_corr == n_actual:
+                radii = np.maximum(radii + area_rule_correction, 0.005)
             else:
                 corr_interp = np.interp(
-                    np.linspace(0, 1, self.n_sections),
+                    np.linspace(0, 1, n_actual),
                     np.linspace(0, 1, n_corr),
                     area_rule_correction,
                 )
-                radii = np.maximum(radii + corr_interp, 0.01)
+                radii = np.maximum(radii + corr_interp, 0.005)
 
         # Generate cross-section rings
         self.sections = []
         theta = np.linspace(0, 2 * math.pi, self.n_ring, endpoint=False)
-        aspect = p.cross_section_aspect
 
         for i, x in enumerate(x_all):
             r = radii[i]
-            rh = r * math.sqrt(aspect) if p.cross_section != "circular" else r
-            rv = r / math.sqrt(aspect) if p.cross_section != "circular" else r
+            aspect = self._compute_aspect(x)
+
+            if p.cross_section != "circular":
+                rh = r * math.sqrt(aspect)
+                rv = r / math.sqrt(aspect)
+            else:
+                rh = r
+                rv = r
 
             if p.cross_section == "rounded_rect":
-                # Superellipse for rounded rectangle: |y/a|^n + |z/b|^n = 1
                 n_exp = 3.0
                 cos_t = np.cos(theta)
                 sin_t = np.sin(theta)
@@ -114,15 +241,15 @@ class FuselageBuilder:
                 py = rh * cos_t / denom
                 pz = rv * sin_t / denom
             else:
-                # Circular or elliptical
                 py = rh * np.cos(theta)
                 pz = rv * np.sin(theta)
 
-            pts = np.column_stack([
-                np.full(self.n_ring, x),
-                py,
-                pz,
-            ])
+            pts = np.column_stack([np.full(self.n_ring, x), py, pz])
+
+            # Apply canopy bump and dorsal spine
+            pts = self._apply_canopy(pts, x, theta)
+            pts = self._apply_dorsal_spine(pts, x, theta)
+
             self.sections.append(FuselageSection(x=x, radius_h=rh, radius_v=rv, points=pts))
 
         return self.sections
@@ -137,6 +264,8 @@ class FuselageBuilder:
 
     def get_mesh(self) -> tuple[np.ndarray, np.ndarray]:
         """Generate a triangle mesh (vertices, faces) from sections.
+
+        Uses proper nose tip and tail closure based on profile geometry.
 
         Returns
         -------
@@ -165,16 +294,26 @@ class FuselageBuilder:
                 faces.append([v0, v1, v2])
                 faces.append([v0, v2, v3])
 
-        # Close nose tip
-        tip = np.mean(self.sections[0].points, axis=0, keepdims=True)
+        # Nose tip: use actual nose tip point [0, 0, 0] for pointed nose
+        # or centroid for blunt nose
+        first_sec = self.sections[0]
+        if first_sec.radius_h < 0.01 and first_sec.radius_v < 0.01:
+            # Nearly pointed: use geometric tip
+            tip = np.array([[first_sec.x, 0.0, 0.0]])
+        else:
+            tip = np.mean(first_sec.points, axis=0, keepdims=True)
         tip_idx = len(verts)
         verts = np.vstack([verts, tip])
         for j in range(n_ring):
             j1 = (j + 1) % n_ring
             faces.append([tip_idx, j, j1])
 
-        # Close tail
-        tail = np.mean(self.sections[-1].points, axis=0, keepdims=True)
+        # Tail closure
+        last_sec = self.sections[-1]
+        if last_sec.radius_h < 0.01 and last_sec.radius_v < 0.01:
+            tail = np.array([[last_sec.x, 0.0, 0.0]])
+        else:
+            tail = np.mean(last_sec.points, axis=0, keepdims=True)
         tail_idx = len(verts)
         verts = np.vstack([verts, tail])
         base_last = (n_sec - 1) * n_ring

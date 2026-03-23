@@ -345,6 +345,12 @@ class AircraftAssembler:
             verts = verts[unique_mask]
             faces = remap[faces]
 
+            # Remove degenerate triangles (collapsed edges)
+            valid = (faces[:, 0] != faces[:, 1]) & \
+                    (faces[:, 1] != faces[:, 2]) & \
+                    (faces[:, 0] != faces[:, 2])
+            faces = faces[valid]
+
         return verts, faces
 
     def get_component_names(self) -> list[str]:

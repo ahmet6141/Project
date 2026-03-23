@@ -29,7 +29,21 @@ class FuselageParams:
     aft_taper_ratio: float = 0.6
     cockpit_station_pct: float = 0.15
     cross_section: Literal["circular", "elliptical", "rounded_rect"] = "elliptical"
-    cross_section_aspect: float = 1.15  # width / height
+    cross_section_aspect: float = 1.15  # width / height at mid-body
+    # Zone control
+    cylindrical_end_pct: float = 0.75  # where cylindrical section ends
+    aft_taper_power: float = 2.0  # taper curve exponent (1=linear, 2=quadratic)
+    nose_body_blend_pct: float = 0.05  # nose-to-body smoothing zone length
+    tail_closure_radius_pct: float = 0.15  # tail end radius (0=pointed, 1=blunt)
+    # Variable cross-section aspect
+    cross_section_aspect_nose: float = 1.0  # rounder nose
+    cross_section_aspect_tail: float = 1.3  # flatter tail
+    # Canopy
+    canopy_enabled: bool = True
+    canopy_height_mm: float = 180.0
+    canopy_length_pct: float = 0.12
+    # Dorsal spine
+    dorsal_spine_height_mm: float = 0.0  # 0=disabled
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +76,9 @@ class WingParams:
     # High-level thickness parameters
     thickness_to_chord_root: float = 0.05  # root t/c ratio (5%)
     thickness_to_chord_tip: float = 0.03  # tip t/c ratio (3%)
+    camber_root_pct: float = 0.0  # root camber (% of chord)
+    camber_tip_pct: float = 0.0  # tip camber (% of chord)
+    te_thickness_mm: float = 0.0  # blunt trailing edge thickness (0=sharp)
     # Inner/outer panel split
     inner_panel_span_pct: float = 0.35  # inner panel ends at 35% half-span
     inner_panel_sweep_deg: float = 60.0  # inner panel LE sweep (steeper)
