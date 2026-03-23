@@ -249,7 +249,7 @@ class IntakeBuilder:
 
         h_cap = math.sqrt(p.capture_area_m2 / p.capture_aspect_ratio)
         w_cap = p.capture_area_m2 / h_cap
-        plate_length = 0.35 * p.duct_length_m
+        plate_length = 0.70 * p.duct_length_m  # extend to 70% of duct for full coverage
         half_h = h_cap / 2.0 * 0.9
 
         if p.intake_type == "chin":
@@ -369,6 +369,103 @@ class IntakeBuilder:
         ])
 
         return verts, faces
+
+    def build_intake_collar(
+        self,
+        fuselage_radius: float,
+        fuselage_radius_v: float,
+        fillet_mm: float = 15.0,
+        n_collar: int = 8,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Build a fillet collar that bridges intake capture to fuselage surface.
+
+        Creates a smooth transition strip around the intake mouth that
+        connects to the fuselage OML, closing the gap for watertight mesh.
+
+        Parameters
+        ----------
+        fuselage_radius : float
+            Fuselage horizontal half-width at intake station.
+        fuselage_radius_v : float
+            Fuselage vertical half-height at intake station.
+        fillet_mm : float
+            Fillet radius in mm for the collar transition.
+        n_collar : int
+            Number of interpolation steps in the collar.
+        """
+        if not self.section_points:
+            return np.zeros((0, 3)), np.zeros((0, 3), dtype=int)
+
+        p = self.p
+        bld = p.boundary_layer_diverter_mm / 1000.0
+        fillet_r = fillet_mm / 1000.0
+        capture_ring = self.section_points[0]  # first section = capture face
+        n_ring = len(capture_ring)
+
+        # Project capture ring onto fuselage surface to get the fuselage-side profile
+        fuse_ring = capture_ring.copy()
+        for i in range(n_ring):
+            y, z = fuse_ring[i, 1], fuse_ring[i, 2]
+
+            if p.intake_type == "dorsal":
+                # Project to top of fuselage ellipse
+                if abs(y) < fuselage_radius * 0.99:
+                    z_fuse = fuselage_radius_v * math.sqrt(
+                        max(0, 1.0 - (y / fuselage_radius) ** 2)
+                    )
+                else:
+                    z_fuse = 0.0
+                fuse_ring[i, 2] = z_fuse
+            elif p.intake_type == "chin":
+                # Project to bottom of fuselage ellipse
+                if abs(y) < fuselage_radius * 0.99:
+                    z_fuse = -fuselage_radius_v * math.sqrt(
+                        max(0, 1.0 - (y / fuselage_radius) ** 2)
+                    )
+                else:
+                    z_fuse = 0.0
+                fuse_ring[i, 2] = z_fuse
+            else:
+                # Side-mounted: project to side of fuselage
+                angle = math.atan2(z, abs(y)) if abs(y) > 1e-6 else 0.0
+                fuse_ring[i, 1] = fuselage_radius * math.cos(angle) * (1.0 if y >= 0 else -1.0)
+                fuse_ring[i, 2] = fuselage_radius_v * math.sin(angle)
+
+        # Build collar sections: interpolate from fuselage surface to capture face
+        sections = []
+        for k in range(n_collar + 1):
+            t = k / n_collar
+            # Cosine ease for G1 tangent continuity at boundaries
+            t_smooth = 0.5 * (1.0 - math.cos(t * math.pi))
+            blended = fuse_ring * (1.0 - t_smooth) + capture_ring * t_smooth
+            # Add fillet bulge at mid-transition
+            bulge = fillet_r * math.sin(t * math.pi)
+            if bulge > 0:
+                # Outward normal direction (radial from fuselage center axis)
+                for i in range(n_ring):
+                    ny = blended[i, 1]
+                    nz = blended[i, 2]
+                    nr = math.sqrt(ny * ny + nz * nz)
+                    if nr > 1e-6:
+                        blended[i, 1] += bulge * ny / nr * 0.3
+                        blended[i, 2] += bulge * nz / nr * 0.3
+            sections.append(blended)
+
+        # Triangulate collar sections
+        if len(sections) < 2:
+            return np.zeros((0, 3)), np.zeros((0, 3), dtype=int)
+
+        verts = np.vstack(sections)
+        faces = []
+        for i in range(len(sections) - 1):
+            b0 = i * n_ring
+            b1 = (i + 1) * n_ring
+            for j in range(n_ring):
+                j1 = (j + 1) % n_ring
+                faces.append([b0 + j, b0 + j1, b1 + j1])
+                faces.append([b0 + j, b1 + j1, b1 + j])
+
+        return verts, np.array(faces)
 
     def build(
         self, fuselage_radius: float = 0.9,

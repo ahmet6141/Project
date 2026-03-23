@@ -74,7 +74,8 @@ class BlendingOperator:
 
         # Generate blending sections from fuselage surface to wing root
         # Parameter t: 0 = fuselage surface, 1 = wing root
-        # Fairing width controls how far the blend extends spanwise
+        # Fairing width scales the fillet bulge prominence (wider fairing = smoother transition)
+        width_scale = fairing_w / 0.1  # normalized to 100mm baseline
         blend_sections = []
         for i in range(n_blend_steps + 1):
             t = i / n_blend_steps
@@ -82,12 +83,11 @@ class BlendingOperator:
             # Smooth interpolation (cosine ease for tangent continuity)
             t_smooth = 0.5 * (1.0 - math.cos(t * math.pi))
 
-            # Fillet offset: maximum at t=0.5 (middle of blend), zero at ends
-            # Scale by fairing width ratio (larger fairing = more prominent bulge)
-            width_scale = max(1.0, fairing_w / 0.1)  # normalized to 100mm baseline
-            fillet_offset = fillet_r * width_scale * math.sin(t * math.pi)
+            # Fillet offset: maximum at t=0.5, zero at ends
+            # fairing_width_mm controls how far the bulge extends outward
+            fillet_offset = fillet_r * max(1.0, width_scale) * math.sin(t * math.pi)
 
-            # Interpolate each point individually between fuselage and wing profiles
+            # Interpolate each point between fuselage and wing profiles
             blended = fuse_profile * (1.0 - t_smooth) + wing_pts * t_smooth
 
             # Apply fillet bulge (outward normal direction)

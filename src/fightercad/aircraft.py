@@ -187,7 +187,11 @@ class AircraftAssembler:
                 self.components[label] = (sv, sf)
 
     def _build_stabilizers(self, fuselage_length: float) -> None:
-        """Build vertical stabilizer, V-tail, or skip if tailless."""
+        """Build vertical stabilizer, V-tail, or skip if tailless.
+
+        Stabilizer root is offset to the fuselage surface and a root
+        fillet is generated for a smooth, CFD-ready junction.
+        """
         p = self.params
         stab_p = p.vertical_stabilizer
         stab_x = fuselage_length * 0.82
@@ -195,23 +199,46 @@ class AircraftAssembler:
         if stab_p.tailless or stab_p.area_m2 <= 0:
             return  # tailless configuration
 
+        # Get fuselage radii at stabilizer station
+        fuse_rh_stab = self._get_fuselage_radius_at(stab_x)
+        fuse_rv_stab = self._get_fuselage_radius_v_at(stab_x)
+        fillet_mm = p.blending.stabilizer_root_fillet_mm
+
         if stab_p.v_tail:
             # Dual V-tail fins
             for label, side in [("vtail_right", 1.0), ("vtail_left", -1.0)]:
                 builder = StabilizerBuilder(stab_p)
-                builder.build(side=side)
+                builder.build(
+                    side=side,
+                    fuselage_radius_h=fuse_rh_stab,
+                    fuselage_radius_v=fuse_rv_stab,
+                )
                 sv, sf = builder.get_mesh()
                 if len(sv) > 0:
                     sv[:, 0] += stab_x
                     self.components[label] = (sv, sf)
+                # Root fillet
+                fv, ff = builder.build_root_fillet(fillet_mm=fillet_mm)
+                if len(fv) > 0:
+                    fv[:, 0] += stab_x
+                    self.components[f"{label}_fillet"] = (fv, ff)
         else:
             # Single vertical stabilizer (with optional cant)
             self.stab_builder = StabilizerBuilder(stab_p)
-            self.stab_builder.build(side=0.0)
+            self.stab_builder.build(
+                side=0.0,
+                fuselage_radius_h=fuse_rh_stab,
+                fuselage_radius_v=fuse_rv_stab,
+            )
             sv, sf = self.stab_builder.get_mesh()
             if len(sv) > 0:
                 sv[:, 0] += stab_x
                 self.components["vertical_stabilizer"] = (sv, sf)
+            # Root fillet
+            fv, ff = self.stab_builder.build_root_fillet(fillet_mm=fillet_mm)
+            if len(fv) > 0:
+                fv[:, 0] += stab_x
+                self.components["vstab_fillet"] = (fv, ff)
 
     def _build_intakes(
         self, fuselage_length: float, fuse_rh: float, fuse_rv: float
@@ -222,6 +249,8 @@ class AircraftAssembler:
         intake_x = fuselage_length * p.intake.station_pct
         fuse_r_at_intake = self._get_fuselage_radius_at(intake_x)
         fuse_rv_at_intake = self._get_fuselage_radius_v_at(intake_x)
+
+        fillet_mm = p.blending.intake_fuselage_fillet_mm
 
         if p.intake.intake_type in ("chin", "dorsal"):
             # Single centerline intake (chin = below, dorsal = above)
@@ -244,6 +273,16 @@ class AircraftAssembler:
             if len(bv) > 0:
                 bv[:, 0] += intake_x
                 self.components[f"bld_{comp_suffix}"] = (bv, bf)
+
+            # Intake-fuselage collar (watertight transition)
+            cv, cf = self.intake_builder.build_intake_collar(
+                fuselage_radius=fuse_r_at_intake,
+                fuselage_radius_v=fuse_rv_at_intake,
+                fillet_mm=fillet_mm,
+            )
+            if len(cv) > 0:
+                cv[:, 0] += intake_x
+                self.components[f"intake_collar_{comp_suffix}"] = (cv, cf)
         else:
             # Dual side-mounted intakes
             right_intake, left_intake = self.intake_builder.build(
@@ -258,6 +297,17 @@ class AircraftAssembler:
                 iv, i_f = self.intake_builder.get_mesh(secs)
                 iv[:, 0] += intake_x
                 self.components[label] = (iv, i_f)
+
+                # Collar for each side intake
+                self.intake_builder.section_points = secs
+                cv, cf = self.intake_builder.build_intake_collar(
+                    fuselage_radius=fuse_r_at_intake,
+                    fuselage_radius_v=fuse_rv_at_intake,
+                    fillet_mm=fillet_mm,
+                )
+                if len(cv) > 0:
+                    cv[:, 0] += intake_x
+                    self.components[f"intake_collar_{label.split('_')[1]}"] = (cv, cf)
 
             for label, side in [("bld_right", 1.0), ("bld_left", -1.0)]:
                 bv, bf = self.intake_builder.build_bld_plate(
@@ -361,7 +411,10 @@ class AircraftAssembler:
         faces = np.vstack(all_faces) if all_faces else np.zeros((0, 3), dtype=int)
 
         # Vertex welding: merge coincident vertices
-        tolerance = 1e-4
+        # Adaptive tolerance: 0.5mm base, scaled by model size for robustness
+        model_extent = verts.max(axis=0) - verts.min(axis=0)
+        model_scale = max(model_extent.max(), 1.0)
+        tolerance = max(5e-4, model_scale * 1e-4)  # 0.5mm or 0.01% of model size
         n = len(verts)
         if n > 0 and len(faces) > 0:
             quantized = np.round(verts / tolerance).astype(np.int64)
