@@ -60,13 +60,21 @@ class WingBuilder:
         self, y: float, half_span: float, root_chord: float, tip_chord: float,
         sweep_rad: float, side: float, x_le_base: float = 0.0,
     ) -> WingSection:
-        """Create a single wing section at spanwise position y."""
+        """Create a single wing section at spanwise position y.
+
+        Chord is derived from LE and TE sweep angles so that
+        ``trailing_edge_sweep_deg`` actually controls the trailing-edge
+        geometry (not just the 2-D outline).
+        """
         p = self.p
         frac = y / half_span if half_span > 0 else 0.0
         dihedral_rad = math.radians(p.dihedral_deg)
 
-        chord = root_chord * (1.0 - frac) + tip_chord * frac
         x_le = x_le_base + y * math.tan(sweep_rad)
+        # TE position governed by TE sweep: x_te(y) = root_chord + y*tan(te_sweep)
+        te_sweep_rad = math.radians(p.trailing_edge_sweep_deg)
+        x_te = root_chord + y * math.tan(te_sweep_rad)
+        chord = max(x_te - x_le, tip_chord * 0.5)  # ensure minimum chord
         z = y * math.tan(dihedral_rad)
         twist = p.twist_deg * frac
 
@@ -180,8 +188,11 @@ class WingBuilder:
 
         def _make_panel_section(y: float) -> WingSection:
             frac = y / half_span if half_span > 0 else 0.0
-            chord = root_chord * (1.0 - frac) + tip_chord * frac
             x_le = _compute_x_le(y)
+            # Chord from LE+TE sweep geometry
+            te_sweep_rad = math.radians(p.trailing_edge_sweep_deg)
+            x_te = root_chord + y * math.tan(te_sweep_rad)
+            chord = max(x_te - x_le, tip_chord * 0.5)
             z = y * math.tan(dihedral_rad)
             twist = p.twist_deg * frac
 

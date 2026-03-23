@@ -61,6 +61,7 @@ class BlendingOperator:
             return np.zeros((0, 3)), np.zeros((0, 3), dtype=int)
 
         fillet_r = self.p.root_fillet_radius_mm / 1000.0  # mm → m
+        fairing_w = self.p.fairing_width_mm / 1000.0  # mm → m
 
         # Wing root profile (the innermost airfoil section)
         wing_pts = wing_root_sections.copy()
@@ -73,6 +74,7 @@ class BlendingOperator:
 
         # Generate blending sections from fuselage surface to wing root
         # Parameter t: 0 = fuselage surface, 1 = wing root
+        # Fairing width controls how far the blend extends spanwise
         blend_sections = []
         for i in range(n_blend_steps + 1):
             t = i / n_blend_steps
@@ -81,7 +83,9 @@ class BlendingOperator:
             t_smooth = 0.5 * (1.0 - math.cos(t * math.pi))
 
             # Fillet offset: maximum at t=0.5 (middle of blend), zero at ends
-            fillet_offset = fillet_r * math.sin(t * math.pi)
+            # Scale by fairing width ratio (larger fairing = more prominent bulge)
+            width_scale = max(1.0, fairing_w / 0.1)  # normalized to 100mm baseline
+            fillet_offset = fillet_r * width_scale * math.sin(t * math.pi)
 
             # Interpolate each point individually between fuselage and wing profiles
             blended = fuse_profile * (1.0 - t_smooth) + wing_pts * t_smooth

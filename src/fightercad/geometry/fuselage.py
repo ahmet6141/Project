@@ -101,14 +101,17 @@ class FuselageBuilder:
             # Cylindrical zone
             return R
         else:
-            # Aft taper (power-curve)
+            # Aft taper (power-curve): R at cyl_end → R*aft_taper_ratio at tail
             t = (x - cyl_end) / (L - cyl_end) if (L - cyl_end) > 0 else 1.0
             t_smooth = t ** p.aft_taper_power
-            r_tail = R * p.aft_taper_ratio
-            # Tail closure: further reduce at very end
-            tail_r_min = R * p.tail_closure_radius_pct * p.aft_taper_ratio
-            r_end = max(tail_r_min, 0.005)  # minimum 5mm radius
-            r_base = R * (1.0 - t_smooth * (1.0 - p.aft_taper_ratio))
+            r_target = R * p.aft_taper_ratio
+            r_base = R * (1.0 - t_smooth) + r_target * t_smooth
+            # Tail closure: blend to smaller radius in last 10% for smooth tip
+            if t > 0.9:
+                t_close = (t - 0.9) / 0.1
+                r_end = r_target * p.tail_closure_radius_pct
+                r_end = max(r_end, 0.005)
+                r_base = r_base * (1.0 - t_close) + r_end * t_close
             return r_base
 
     def _compute_aspect(self, x: float) -> float:
