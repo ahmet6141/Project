@@ -1,0 +1,114 @@
+# FighterCAD - Professional Delta-Wing UCAV Configuration
+# Based on nEUROn/X-47B/Taranis class design principles
+# Blended wing-body, no cockpit, dorsal intake, V-tail, stealth shaping
+
+meta:
+  name: "Delta-Wing UCAV"
+  aircraft_type: "ucav"
+  design_mach: 0.9
+  design_altitude_m: 10000.0
+
+fuselage:
+  length_m: 11.0
+  max_diameter_m: 1.4
+  nose_fineness_ratio: 3.0
+  nose_profile: "haack"
+  haack_C: 0.333  # LV-Haack (smoother nose for stealth)
+  aft_taper_ratio: 0.45
+  cockpit_station_pct: 0.15
+  cross_section: "elliptical"
+  cross_section_aspect: 1.25
+  cylindrical_end_pct: 0.65
+  aft_taper_power: 2.5
+  nose_body_blend_pct: 0.06
+  tail_closure_radius_pct: 0.20
+  cross_section_aspect_nose: 1.1
+  cross_section_aspect_tail: 1.5
+  canopy_enabled: false
+  canopy_height_mm: 0.0
+  canopy_length_pct: 0.0
+  dorsal_spine_height_mm: 0.0
+
+wing:
+  planform: "cropped_delta"
+  span_m: 12.5
+  area_m2: 55.0
+  aspect_ratio: 2.8
+  taper_ratio: 0.06
+  leading_edge_sweep_deg: 55.0
+  trailing_edge_sweep_deg: 15.0
+  dihedral_deg: -2.0
+  twist_deg: -3.0
+  root_airfoil: "naca64a004"
+  tip_airfoil: "biconvex_3"
+  leading_edge_radius_mm: 3.0
+  wing_station_pct: 0.35
+  incidence_deg: 2.0
+  thickness_to_chord_root: 0.10
+  thickness_to_chord_tip: 0.03
+  camber_root_pct: 1.5
+  camber_tip_pct: 0.0
+  te_thickness_mm: 1.0
+  sawtooth_te_enabled: true
+  sawtooth_depth_mm: 40.0
+  sawtooth_count: 10
+  inner_panel_span_pct: 0.30
+  inner_panel_sweep_deg: 60.0
+
+control_surfaces:
+  elevon_chord_pct: 0.25
+  aileron_chord_pct: 0.20
+  elevon_span_pct: 0.70
+  aileron_span_pct: 0.40
+  deflection_deg: 0.0
+
+blending:
+  root_fillet_radius_mm: 80.0
+  leading_edge_fillet_mm: 30.0
+  trailing_edge_fillet_mm: 20.0
+  blending_mode: "smooth"
+  strake_length_m: 1.2
+  strake_sweep_deg: 72.0
+  fairing_width_mm: 200.0
+  stabilizer_root_fillet_mm: 20.0
+  intake_fuselage_fillet_mm: 25.0
+
+vertical_stabilizer:
+  area_m2: 2.5
+  aspect_ratio: 1.0
+  sweep_deg: 45.0
+  taper_ratio: 0.30
+  cant_deg: 0.0
+  v_tail: true
+  v_tail_cant_deg: 40.0
+  tailless: false
+
+intake:
+  intake_type: "dorsal"
+  intake_count: 1
+  capture_area_m2: 0.35
+  ramp_angle_deg: 5.0
+  lip_sweep_deg: 35.0
+  station_pct: 0.25
+  boundary_layer_diverter_mm: 60.0
+  capture_aspect_ratio: 2.0
+  duct_length_m: 3.0
+  lip_radius_mm: 20.0
+
+exhaust:
+  nozzle_type: "convergent"
+  exit_diameter_m: 0.60
+  throat_diameter_m: 0.55
+  nozzle_length_m: 0.9
+
+area_rule:
+  enabled: true
+  target_mach: 0.9
+  waist_station_pct: 0.50
+  smoothing_iterations: 8
+
+internal_structure:
+  engine_bay_station_pct: 0.55
+  engine_bay_length_pct: 0.20
+  fuel_tank_volume_pct: 0.35
+  weapons_bay_enabled: true

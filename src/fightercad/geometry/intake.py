@@ -77,6 +77,9 @@ class IntakeBuilder:
         if self.p.intake_type == "chin":
             rv = fuselage_radius_v if fuselage_radius_v is not None else fuselage_radius
             return self._build_chin(rv)
+        if self.p.intake_type == "dorsal":
+            rv = fuselage_radius_v if fuselage_radius_v is not None else fuselage_radius
+            return self._build_dorsal(rv)
         return self._build_side_mounted(side, fuselage_radius)
 
     def _build_side_mounted(
@@ -174,6 +177,63 @@ class IntakeBuilder:
         self.section_points = sections
         return sections
 
+    def _build_dorsal(self, fuselage_radius_v: float) -> list[np.ndarray]:
+        """Build a single dorsal (top-mounted) intake above the fuselage.
+
+        The intake sits on the upper fuselage surface (positive z),
+        centered on y=0.  The duct curves downward through the fuselage
+        to reach the engine face at the aircraft centerline.
+        Common on stealth UCAVs (nEUROn, X-47B).
+        """
+        p = self.p
+        capture_area = p.capture_area_m2
+        aspect = p.capture_aspect_ratio
+        duct_length = p.duct_length_m
+
+        # Capture face: wide and flat (dorsal style)
+        h_cap = math.sqrt(capture_area / aspect)
+        w_cap = capture_area / h_cap
+
+        # Engine face (circular)
+        r_engine = math.sqrt(capture_area / math.pi)
+
+        # BLD offset above fuselage
+        bld = p.boundary_layer_diverter_mm / 1000.0
+        z_base = fuselage_radius_v + bld
+
+        # Compression ramp (downward for dorsal)
+        ramp_rad = math.radians(p.ramp_angle_deg)
+        ramp_amplitude = 0.2 * duct_length * math.tan(ramp_rad)
+
+        sections = []
+        x_stations = np.linspace(0, duct_length, self.n_sections)
+
+        for i, dx in enumerate(x_stations):
+            t = dx / duct_length
+            t_smooth = 0.5 * (1.0 - math.cos(t * math.pi))
+
+            # Superellipse: 2.8 (flatter rect for wide dorsal) → 2.0 (circle)
+            n_exp = 2.8 - 0.8 * t_smooth
+
+            # Cross-section transition
+            a = w_cap / 2.0 * (1.0 - t_smooth) + r_engine * t_smooth
+            b = h_cap / 2.0 * (1.0 - t_smooth) + r_engine * t_smooth
+
+            # S-duct: duct curves down from dorsal to engine centerline
+            # z goes from z_base → ~0 (engine face near centerline)
+            z_curr = z_base * (1.0 - 0.85 * t_smooth)
+
+            # Ramp: negative z (downward into fuselage) at forward section
+            ramp_z = -ramp_amplitude * math.sin(math.pi * t / 2.0) ** 2 * (1.0 - t)
+
+            sec = self._make_superellipse_section(
+                a, b, n_exp, dx, 0.0, z_curr + ramp_z
+            )
+            sections.append(sec)
+
+        self.section_points = sections
+        return sections
+
     def build_bld_plate(
         self, side: float = 1.0, fuselage_radius: float = 0.9,
         fuselage_radius_v: float | None = None,
@@ -194,6 +254,12 @@ class IntakeBuilder:
 
         if p.intake_type == "chin":
             return self._build_chin_bld_plate(
+                fuselage_radius_v or fuselage_radius,
+                bld, w_cap, half_h, plate_length,
+            )
+
+        if p.intake_type == "dorsal":
+            return self._build_dorsal_bld_plate(
                 fuselage_radius_v or fuselage_radius,
                 bld, w_cap, half_h, plate_length,
             )
@@ -267,21 +333,58 @@ class IntakeBuilder:
 
         return verts, faces
 
+    def _build_dorsal_bld_plate(
+        self,
+        fuselage_radius_v: float,
+        bld: float,
+        w_cap: float,
+        half_h: float,
+        plate_length: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Build BLD plate for dorsal intake (horizontal plate on top of fuselage)."""
+        half_w = w_cap / 2.0 * 0.9
+        z_fuse = fuselage_radius_v  # fuselage top
+        z_intake = fuselage_radius_v + bld  # intake bottom
+
+        verts = np.array([
+            # Front face
+            [0.0, -half_w, z_fuse],
+            [0.0, half_w, z_fuse],
+            [0.0, half_w, z_intake],
+            [0.0, -half_w, z_intake],
+            # Back face
+            [plate_length, -half_w, z_fuse],
+            [plate_length, half_w, z_fuse],
+            [plate_length, half_w, z_intake],
+            [plate_length, -half_w, z_intake],
+        ])
+
+        faces = np.array([
+            [0, 5, 1], [0, 4, 5],
+            [3, 2, 6], [3, 6, 7],
+            [0, 3, 7], [0, 7, 4],
+            [1, 5, 6], [1, 6, 2],
+            [0, 1, 2], [0, 2, 3],
+            [4, 7, 6], [4, 6, 5],
+        ])
+
+        return verts, faces
+
     def build(
         self, fuselage_radius: float = 0.9,
         fuselage_radius_v: float | None = None,
     ) -> tuple[list[np.ndarray], list[np.ndarray] | None]:
         """Build intake(s).
 
-        For chin type: returns (chin_sections, None).
+        For chin/dorsal type: returns (sections, None).
         For side_mounted: returns (right_sections, left_sections).
         """
-        if self.p.intake_type == "chin":
-            chin = self.build_single(
+        if self.p.intake_type in ("chin", "dorsal"):
+            secs = self.build_single(
                 side=0.0, fuselage_radius=fuselage_radius,
                 fuselage_radius_v=fuselage_radius_v,
             )
-            return chin, None
+            return secs, None
 
         right = self.build_single(side=1.0, fuselage_radius=fuselage_radius)
         left = self.build_single(side=-1.0, fuselage_radius=fuselage_radius)

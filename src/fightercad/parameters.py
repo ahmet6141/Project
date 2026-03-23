@@ -12,6 +12,7 @@ from typing import Literal
 @dataclass
 class MetaParams:
     name: str = "Baseline Supersonic Fighter"
+    aircraft_type: Literal["fighter", "ucav"] = "fighter"
     design_mach: float = 1.6
     design_altitude_m: float = 10000.0
 
@@ -79,6 +80,10 @@ class WingParams:
     camber_root_pct: float = 0.0  # root camber (% of chord)
     camber_tip_pct: float = 0.0  # tip camber (% of chord)
     te_thickness_mm: float = 0.0  # blunt trailing edge thickness (0=sharp)
+    # Saw-tooth (serrated) trailing edge for stealth
+    sawtooth_te_enabled: bool = False
+    sawtooth_depth_mm: float = 40.0  # tooth depth
+    sawtooth_count: int = 8  # number of teeth per half-wing
     # Inner/outer panel split
     inner_panel_span_pct: float = 0.35  # inner panel ends at 35% half-span
     inner_panel_sweep_deg: float = 60.0  # inner panel LE sweep (steeper)
@@ -122,6 +127,11 @@ class VerticalStabilizerParams:
     sweep_deg: float = 50.0
     taper_ratio: float = 0.25
     cant_deg: float = 0.0  # 0 = vertical
+    # V-tail configuration
+    v_tail: bool = False  # True = dual canted fins (V-tail)
+    v_tail_cant_deg: float = 35.0  # outward cant angle for each V-tail fin
+    # Tailless option
+    tailless: bool = False  # True = no vertical stabilizer at all
 
 
 # ---------------------------------------------------------------------------
@@ -197,4 +207,132 @@ class AircraftParams:
     area_rule: AreaRuleParams = field(default_factory=AreaRuleParams)
     internal_structure: InternalStructureParams = field(
         default_factory=InternalStructureParams
+    )
+
+
+# ---------------------------------------------------------------------------
+# UCAV preset factory
+# ---------------------------------------------------------------------------
+
+def create_ucav_params() -> AircraftParams:
+    """Create professional-grade delta-wing UCAV parameter set.
+
+    Based on nEUROn/X-47B/Taranis class UCAV design principles:
+    - Blended wing-body, no cockpit
+    - High LE sweep (55-65°), low aspect ratio
+    - Dorsal intake, V-tail or tailless
+    - Stealth features (saw-tooth TE, blunt TE)
+    """
+    return AircraftParams(
+        meta=MetaParams(
+            name="Delta-Wing UCAV",
+            aircraft_type="ucav",
+            design_mach=0.9,
+            design_altitude_m=10000.0,
+        ),
+        fuselage=FuselageParams(
+            length_m=11.0,
+            max_diameter_m=1.4,
+            nose_fineness_ratio=3.0,
+            nose_profile="haack",
+            haack_C=0.333,  # LV-Haack for smoother nose
+            aft_taper_ratio=0.45,
+            cockpit_station_pct=0.15,
+            cross_section="elliptical",
+            cross_section_aspect=1.25,  # wider than tall
+            cylindrical_end_pct=0.65,  # shorter cylindrical section
+            aft_taper_power=2.5,  # smoother tail contour
+            nose_body_blend_pct=0.06,
+            tail_closure_radius_pct=0.20,
+            cross_section_aspect_nose=1.1,
+            cross_section_aspect_tail=1.5,  # flat tail for nozzle
+            canopy_enabled=False,  # no cockpit
+            canopy_height_mm=0.0,
+            canopy_length_pct=0.0,
+            dorsal_spine_height_mm=0.0,  # smooth dorsal
+        ),
+        wing=WingParams(
+            planform="cropped_delta",
+            span_m=12.5,  # wide span for BWB
+            area_m2=55.0,  # large wing area (BWB)
+            aspect_ratio=2.8,
+            taper_ratio=0.06,  # very tapered
+            leading_edge_sweep_deg=55.0,
+            trailing_edge_sweep_deg=15.0,  # positive TE sweep (stealth)
+            dihedral_deg=-2.0,
+            twist_deg=-3.0,
+            root_airfoil="naca64a004",
+            tip_airfoil="biconvex_3",
+            leading_edge_radius_mm=3.0,  # slightly rounded LE
+            wing_station_pct=0.35,  # forward wing position (BWB)
+            incidence_deg=2.0,
+            thickness_to_chord_root=0.10,  # thicker root (BWB structure)
+            thickness_to_chord_tip=0.03,
+            camber_root_pct=1.5,  # slight camber for subsonic efficiency
+            camber_tip_pct=0.0,
+            te_thickness_mm=1.0,  # blunt TE for stealth
+            sawtooth_te_enabled=True,  # serrated TE
+            sawtooth_depth_mm=40.0,
+            sawtooth_count=10,
+            inner_panel_span_pct=0.30,
+            inner_panel_sweep_deg=60.0,
+        ),
+        blending=BlendingParams(
+            root_fillet_radius_mm=80.0,  # large fillet for BWB
+            leading_edge_fillet_mm=30.0,
+            trailing_edge_fillet_mm=20.0,
+            blending_mode="smooth",
+            strake_length_m=1.2,  # LEX for vortex lift
+            strake_sweep_deg=72.0,
+            fairing_width_mm=200.0,  # wide fairing for BWB blend
+            stabilizer_root_fillet_mm=20.0,
+            intake_fuselage_fillet_mm=25.0,
+        ),
+        vertical_stabilizer=VerticalStabilizerParams(
+            area_m2=2.5,  # small V-tail
+            aspect_ratio=1.0,
+            sweep_deg=45.0,
+            taper_ratio=0.30,
+            cant_deg=0.0,
+            v_tail=True,  # dual V-tail fins
+            v_tail_cant_deg=40.0,
+            tailless=False,
+        ),
+        control_surfaces=ControlSurfaceParams(
+            elevon_chord_pct=0.25,  # larger elevons for pitch+roll
+            aileron_chord_pct=0.20,
+            elevon_span_pct=0.70,  # wide elevon coverage
+            aileron_span_pct=0.40,
+            deflection_deg=0.0,
+        ),
+        intake=IntakeParams(
+            intake_type="dorsal",  # top-mounted for stealth
+            intake_count=1,
+            capture_area_m2=0.35,
+            ramp_angle_deg=5.0,
+            lip_sweep_deg=35.0,
+            station_pct=0.25,
+            boundary_layer_diverter_mm=60.0,
+            capture_aspect_ratio=2.0,  # wide and flat
+            duct_length_m=3.0,
+            lip_radius_mm=20.0,
+        ),
+        exhaust=ExhaustParams(
+            nozzle_type="convergent",  # simpler nozzle for subsonic UCAV
+            exit_diameter_m=0.60,
+            throat_diameter_m=0.55,
+            nozzle_length_m=0.9,
+        ),
+        area_rule=AreaRuleParams(
+            enabled=True,
+            target_mach=0.9,
+            waist_station_pct=0.50,
+            smoothing_iterations=8,
+        ),
+        internal_structure=InternalStructureParams(
+            engine_bay_station_pct=0.55,
+            engine_bay_length_pct=0.20,
+            fuel_tank_volume_pct=0.35,
+            weapons_bay_enabled=True,
+        ),
     )

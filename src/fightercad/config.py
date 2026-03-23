@@ -12,6 +12,7 @@ from fightercad.parameters import (
     AircraftParams,
     AreaRuleParams,
     BlendingParams,
+    ControlSurfaceParams,
     ExhaustParams,
     FuselageParams,
     IntakeParams,
@@ -19,6 +20,7 @@ from fightercad.parameters import (
     MetaParams,
     VerticalStabilizerParams,
     WingParams,
+    create_ucav_params,
 )
 
 _SECTION_MAP: dict[str, type] = {
@@ -27,10 +29,16 @@ _SECTION_MAP: dict[str, type] = {
     "wing": WingParams,
     "blending": BlendingParams,
     "vertical_stabilizer": VerticalStabilizerParams,
+    "control_surfaces": ControlSurfaceParams,
     "intake": IntakeParams,
     "exhaust": ExhaustParams,
     "area_rule": AreaRuleParams,
     "internal_structure": InternalStructureParams,
+}
+
+# Preset configurations
+_PRESETS: dict[str, callable] = {
+    "ucav": create_ucav_params,
 }
 
 
@@ -61,6 +69,16 @@ def save_config(params: AircraftParams, path: str | Path) -> None:
     data = dataclasses.asdict(params)
     with open(path, "w", encoding="utf-8") as fh:
         yaml.dump(data, fh, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+
+def load_preset(name: str) -> AircraftParams:
+    """Load a built-in preset configuration by name.
+
+    Available presets: 'ucav', 'fighter' (default).
+    """
+    if name in _PRESETS:
+        return _PRESETS[name]()
+    return AircraftParams()
 
 
 def params_to_dict(params: AircraftParams) -> dict[str, Any]:

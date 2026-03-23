@@ -29,10 +29,15 @@ COMPONENT_COLORS = {
     "wing_right": (0.2, 0.4, 0.8),
     "wing_left": (0.2, 0.4, 0.8),
     "vertical_stabilizer": (0.3, 0.7, 0.3),
-    # Intakes (side-mounted and chin)
+    # V-tail fins
+    "vtail_right": (0.3, 0.65, 0.35),
+    "vtail_left": (0.3, 0.65, 0.35),
+    # Intakes (side-mounted, chin, dorsal)
     "intake_right": (0.8, 0.3, 0.2),
     "intake_left": (0.8, 0.3, 0.2),
     "intake_chin": (0.8, 0.3, 0.2),
+    "intake_dorsal": (0.75, 0.35, 0.25),
+    "bld_dorsal": (0.6, 0.6, 0.6),
     "bld_right": (0.6, 0.6, 0.6),
     "bld_left": (0.6, 0.6, 0.6),
     "bld_chin": (0.6, 0.6, 0.6),
@@ -41,6 +46,9 @@ COMPONENT_COLORS = {
     "wing_root_fairing_left": (0.5, 0.5, 0.8),
     "strake_right": (0.4, 0.55, 0.85),
     "strake_left": (0.4, 0.55, 0.85),
+    # Saw-tooth trailing edge (stealth)
+    "sawtooth_te_right": (0.5, 0.5, 0.5),
+    "sawtooth_te_left": (0.5, 0.5, 0.5),
 }
 
 # Check VTK availability

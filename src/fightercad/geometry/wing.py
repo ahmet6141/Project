@@ -362,6 +362,94 @@ class WingBuilder:
 
         return verts, np.array(faces) if faces else (verts, np.zeros((0, 3), dtype=int))
 
+    @staticmethod
+    def build_sawtooth_te(
+        sections: list[WingSection],
+        depth_mm: float,
+        n_teeth: int,
+        side: float = 1.0,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Generate saw-tooth (serrated) trailing edge geometry.
+
+        Creates a thin zigzag strip along the trailing edge of the given
+        wing sections for stealth shaping.
+
+        Parameters
+        ----------
+        sections : list[WingSection]
+            Wing sections (must have at least 2).
+        depth_mm : float
+            Tooth depth in mm (how far back the serration extends).
+        n_teeth : int
+            Number of teeth along the half-span.
+        side : float
+            +1.0 for right, -1.0 for left.
+
+        Returns
+        -------
+        vertices : np.ndarray (V, 3)
+        faces : np.ndarray (F, 3)
+        """
+        if len(sections) < 2 or n_teeth < 1 or depth_mm <= 0:
+            return np.zeros((0, 3)), np.zeros((0, 3), dtype=int)
+
+        depth = depth_mm / 1000.0
+        # Get TE positions from each section
+        te_points = []
+        for sec in sections:
+            pts = sec.points_3d
+            n_pts = len(pts)
+            half_n = n_pts // 2
+            # TE is at index half_n-1 (upper) and half_n (lower)
+            # Average upper and lower TE for center line
+            te_upper = pts[half_n - 1]
+            te_lower = pts[half_n]
+            te_center = (te_upper + te_lower) / 2.0
+            te_points.append(te_center)
+
+        te_points = np.array(te_points)
+
+        # Interpolate TE line at tooth positions
+        n_sec = len(te_points)
+        t_teeth = np.linspace(0, 1, 2 * n_teeth + 1)
+        interp_pts = np.zeros((len(t_teeth), 3))
+        for dim in range(3):
+            interp_pts[:, dim] = np.interp(
+                t_teeth, np.linspace(0, 1, n_sec), te_points[:, dim]
+            )
+
+        # Build zigzag: even indices = base TE, odd indices = extended TE
+        verts = []
+        for i, pt in enumerate(interp_pts):
+            if i % 2 == 0:
+                # Base position (on the wing TE)
+                verts.append(pt.copy())
+            else:
+                # Extended position (tooth tip, pushed aft)
+                extended = pt.copy()
+                extended[0] += depth  # extend in x (aft)
+                verts.append(extended)
+
+        verts = np.array(verts)
+
+        # Thin strip: duplicate with slight z offset for thickness
+        thickness = 0.001  # 1mm thick strip
+        upper_verts = verts.copy()
+        upper_verts[:, 2] += thickness / 2
+        lower_verts = verts.copy()
+        lower_verts[:, 2] -= thickness / 2
+
+        all_verts = np.vstack([upper_verts, lower_verts])
+        n_v = len(upper_verts)
+
+        faces = []
+        for i in range(n_v - 1):
+            # Upper surface
+            faces.append([i, i + 1, n_v + i + 1])
+            faces.append([i, n_v + i + 1, n_v + i])
+
+        return all_verts, np.array(faces) if faces else (all_verts, np.zeros((0, 3), dtype=int))
+
     def get_mesh(self) -> tuple[np.ndarray, np.ndarray]:
         """Generate triangle mesh for one wing half (right side)."""
         if not self.sections:

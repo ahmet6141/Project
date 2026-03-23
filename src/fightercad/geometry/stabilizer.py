@@ -1,4 +1,4 @@
-"""Vertical stabilizer geometry generation."""
+"""Vertical stabilizer and V-tail geometry generation."""
 
 from __future__ import annotations
 
@@ -11,10 +11,13 @@ from fightercad.geometry.primitives import get_airfoil, airfoil_to_3d
 
 
 class StabilizerBuilder:
-    """Build vertical stabilizer geometry.
+    """Build vertical stabilizer or V-tail geometry.
 
-    The stabilizer uses the same lofting approach as the wing but oriented
-    vertically (z-axis instead of y-axis).
+    Supports three configurations:
+    - Single vertical fin (cant_deg = 0)
+    - Single canted fin (cant_deg != 0)
+    - V-tail: dual canted fins (v_tail = True)
+    - Tailless: no stabilizer (tailless = True)
     """
 
     def __init__(self, params: VerticalStabilizerParams, n_sections: int = 6, n_af_pts: int = 40):
@@ -23,8 +26,14 @@ class StabilizerBuilder:
         self.n_af = n_af_pts
         self.section_points: list[np.ndarray] = []
 
-    def build(self) -> list[np.ndarray]:
+    def build(self, side: float = 0.0) -> list[np.ndarray]:
         """Generate stabilizer sections.
+
+        Parameters
+        ----------
+        side : float
+            0.0 for single vertical, +1.0 for right V-tail fin,
+            -1.0 for left V-tail fin.
 
         Returns
         -------
@@ -32,12 +41,22 @@ class StabilizerBuilder:
             List of (N, 3) arrays, one per spanwise (vertical) station.
         """
         p = self.p
+
+        if p.tailless or p.area_m2 <= 0:
+            self.section_points = []
+            return []
+
         span = math.sqrt(p.aspect_ratio * p.area_m2)
         root_chord = 2.0 * p.area_m2 / (span * (1.0 + p.taper_ratio))
         tip_chord = root_chord * p.taper_ratio
 
         sweep_rad = math.radians(p.sweep_deg)
-        cant_rad = math.radians(p.cant_deg)
+
+        # Determine cant angle
+        if p.v_tail and side != 0.0:
+            cant_rad = math.radians(p.v_tail_cant_deg) * side
+        else:
+            cant_rad = math.radians(p.cant_deg)
 
         z_stations = np.linspace(0, span, self.n_sections)
         self.section_points = []
@@ -47,16 +66,13 @@ class StabilizerBuilder:
             chord = root_chord * (1.0 - frac) + tip_chord * frac
             x_le = z * math.tan(sweep_rad)
 
-            # Use a thin symmetric airfoil for the stabilizer
             af_2d = get_airfoil("naca64a004", chord, le_radius_mm=2.0, num_points=self.n_af)
 
-            # Build 3D points: x = chordwise, y = cant offset, z = vertical
             n = len(af_2d)
             pts = np.zeros((n, 3))
-            pts[:, 0] = af_2d[:, 0] + x_le  # chordwise + sweep
-            pts[:, 1] = z * math.sin(cant_rad)  # cant lateral offset
-            pts[:, 2] = z * math.cos(cant_rad)  # vertical
-            # Thickness is in the y-direction for vertical stabilizer
+            pts[:, 0] = af_2d[:, 0] + x_le
+            pts[:, 1] = z * math.sin(cant_rad)
+            pts[:, 2] = z * math.cos(cant_rad)
             pts[:, 1] += af_2d[:, 1]
 
             self.section_points.append(pts)
@@ -66,7 +82,7 @@ class StabilizerBuilder:
     def get_mesh(self) -> tuple[np.ndarray, np.ndarray]:
         """Generate triangle mesh."""
         if not self.section_points:
-            self.build()
+            return np.zeros((0, 3)), np.zeros((0, 3), dtype=int)
 
         n_sec = len(self.section_points)
         n_pts = len(self.section_points[0])

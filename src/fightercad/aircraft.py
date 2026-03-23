@@ -94,13 +94,8 @@ class AircraftAssembler:
         # Build panelled wings with control surfaces
         self._build_wing_panels(wing_x_offset, fuse_rh, fuse_rv)
 
-        # 4. Vertical stabilizer
-        self.stab_builder = StabilizerBuilder(p.vertical_stabilizer)
-        stab_secs = self.stab_builder.build()
-        sv, sf = self.stab_builder.get_mesh()
-        stab_x = L * 0.82
-        sv[:, 0] += stab_x
-        self.components["vertical_stabilizer"] = (sv, sf)
+        # 4. Vertical stabilizer / V-tail / tailless
+        self._build_stabilizers(L)
 
         # 5. Intakes
         self._build_intakes(L, fuse_rh, fuse_rv)
@@ -150,6 +145,19 @@ class AircraftAssembler:
                 verts[:, 1] += fuse_rh * side
                 self.components[comp_name] = (verts, faces)
 
+            # Saw-tooth trailing edge (stealth feature)
+            if p.wing.sawtooth_te_enabled:
+                all_secs = outer_main + (aileron_secs if aileron_secs else [])
+                if all_secs:
+                    st_v, st_f = self.wing_builder.build_sawtooth_te(
+                        all_secs, p.wing.sawtooth_depth_mm,
+                        p.wing.sawtooth_count, side,
+                    )
+                    if len(st_v) > 0:
+                        st_v[:, 0] += wing_x_offset
+                        st_v[:, 1] += fuse_rh * side
+                        self.components[f"sawtooth_te_{side_label}"] = (st_v, st_f)
+
             # Wing-fuselage fairing (use inner panel root section)
             if inner_main:
                 wing_root_pts = inner_main[0].points_3d.copy()
@@ -178,26 +186,54 @@ class AircraftAssembler:
             if len(sv) > 0:
                 self.components[label] = (sv, sf)
 
+    def _build_stabilizers(self, fuselage_length: float) -> None:
+        """Build vertical stabilizer, V-tail, or skip if tailless."""
+        p = self.params
+        stab_p = p.vertical_stabilizer
+        stab_x = fuselage_length * 0.82
+
+        if stab_p.tailless or stab_p.area_m2 <= 0:
+            return  # tailless configuration
+
+        if stab_p.v_tail:
+            # Dual V-tail fins
+            for label, side in [("vtail_right", 1.0), ("vtail_left", -1.0)]:
+                builder = StabilizerBuilder(stab_p)
+                builder.build(side=side)
+                sv, sf = builder.get_mesh()
+                if len(sv) > 0:
+                    sv[:, 0] += stab_x
+                    self.components[label] = (sv, sf)
+        else:
+            # Single vertical stabilizer (with optional cant)
+            self.stab_builder = StabilizerBuilder(stab_p)
+            self.stab_builder.build(side=0.0)
+            sv, sf = self.stab_builder.get_mesh()
+            if len(sv) > 0:
+                sv[:, 0] += stab_x
+                self.components["vertical_stabilizer"] = (sv, sf)
+
     def _build_intakes(
         self, fuselage_length: float, fuse_rh: float, fuse_rv: float
     ) -> None:
-        """Build intake(s) based on intake_type (chin or side_mounted)."""
+        """Build intake(s) based on intake_type (chin, dorsal, or side_mounted)."""
         p = self.params
         self.intake_builder = IntakeBuilder(p.intake)
         intake_x = fuselage_length * p.intake.station_pct
         fuse_r_at_intake = self._get_fuselage_radius_at(intake_x)
         fuse_rv_at_intake = self._get_fuselage_radius_v_at(intake_x)
 
-        if p.intake.intake_type == "chin":
-            # Single chin-mounted intake
-            chin_secs = self.intake_builder.build_single(
+        if p.intake.intake_type in ("chin", "dorsal"):
+            # Single centerline intake (chin = below, dorsal = above)
+            comp_suffix = p.intake.intake_type  # "chin" or "dorsal"
+            secs = self.intake_builder.build_single(
                 side=0.0,
                 fuselage_radius=fuse_r_at_intake,
                 fuselage_radius_v=fuse_rv_at_intake,
             )
-            iv, i_f = self.intake_builder.get_mesh(chin_secs)
+            iv, i_f = self.intake_builder.get_mesh(secs)
             iv[:, 0] += intake_x
-            self.components["intake_chin"] = (iv, i_f)
+            self.components[f"intake_{comp_suffix}"] = (iv, i_f)
 
             # BLD plate
             bv, bf = self.intake_builder.build_bld_plate(
@@ -207,7 +243,7 @@ class AircraftAssembler:
             )
             if len(bv) > 0:
                 bv[:, 0] += intake_x
-                self.components["bld_chin"] = (bv, bf)
+                self.components[f"bld_{comp_suffix}"] = (bv, bf)
         else:
             # Dual side-mounted intakes
             right_intake, left_intake = self.intake_builder.build(
