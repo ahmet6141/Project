@@ -445,8 +445,15 @@ class FighterCADApp(tk.Tk):
 
         # --- Wing ---
         f = section("Kanat (Wing)")
+        slider(f, "wing.span_m", "Kanat Acikligi (m)", 4, 16, 7.85, 0.05)
         slider(f, "wing.area_m2", "Alan (m²)", 15, 60, 28.0, 0.5)
-        slider(f, "wing.aspect_ratio", "Aspect Ratio", 1.0, 5.0, 2.2, 0.1)
+
+        # Computed info labels (read-only)
+        info_frame = ttk.Frame(f)
+        info_frame.pack(fill="x", padx=2, pady=2)
+        self._wing_info_var = tk.StringVar(value="AR: 2.20 | Kok: 4.58m | Uc: 0.46m | MAC: 3.16m")
+        ttk.Label(info_frame, textvariable=self._wing_info_var,
+                  font=("Consolas", 8), foreground="gray").pack(fill="x")
         slider(f, "wing.taper_ratio", "Taper Ratio", 0.0, 0.6, 0.10, 0.01)
         slider(f, "wing.leading_edge_sweep_deg", "LE Süpürme (°)", 30, 75, 55.0, 1.0)
         slider(f, "wing.trailing_edge_sweep_deg", "TE Süpürme (°)", -20, 20, -5.0, 1.0)
@@ -537,8 +544,8 @@ class FighterCADApp(tk.Tk):
                 cross_section_aspect=g("fuselage.cross_section_aspect"),
             ),
             wing=WingParams(
+                span_m=g("wing.span_m"),
                 area_m2=g("wing.area_m2"),
-                aspect_ratio=g("wing.aspect_ratio"),
                 taper_ratio=g("wing.taper_ratio"),
                 leading_edge_sweep_deg=g("wing.leading_edge_sweep_deg"),
                 trailing_edge_sweep_deg=g("wing.trailing_edge_sweep_deg"),
@@ -649,9 +656,28 @@ class FighterCADApp(tk.Tk):
 
     def _on_slider_changed(self) -> None:
         """Debounced callback for live slider updates."""
+        self._update_wing_info()
         if self._debounce_id is not None:
             self.after_cancel(self._debounce_id)
         self._debounce_id = self.after(200, self._on_generate)
+
+    def _update_wing_info(self) -> None:
+        """Update computed wing geometry info label."""
+        try:
+            span = self._widgets["wing.span_m"].get()
+            area = self._widgets["wing.area_m2"].get()
+            taper = self._widgets["wing.taper_ratio"].get()
+            if span <= 0 or area <= 0:
+                return
+            ar = span ** 2 / area
+            c_root = 2.0 * area / (span * (1.0 + taper))
+            c_tip = c_root * taper
+            mac = c_root * (2.0 / 3.0) * (1 + taper + taper ** 2) / (1 + taper)
+            self._wing_info_var.set(
+                f"AR: {ar:.2f} | Kok: {c_root:.2f}m | Uc: {c_tip:.2f}m | MAC: {mac:.2f}m"
+            )
+        except Exception:
+            pass
 
     def _on_analyze(self) -> None:
         self._set_status("Aerodinamik analiz çalışıyor...")

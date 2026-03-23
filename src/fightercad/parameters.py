@@ -38,8 +38,9 @@ class FuselageParams:
 @dataclass
 class WingParams:
     planform: Literal["delta", "cropped_delta", "double_delta"] = "cropped_delta"
+    span_m: float = 7.85  # full wingspan (m), default ≈ √(2.2×28)
     area_m2: float = 28.0
-    aspect_ratio: float = 2.2
+    aspect_ratio: float = 2.2  # kept for backward compat; computed as span²/area in practice
     taper_ratio: float = 0.10
     leading_edge_sweep_deg: float = 55.0
     trailing_edge_sweep_deg: float = -5.0

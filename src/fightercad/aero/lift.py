@@ -10,9 +10,11 @@ from fightercad.aero.supersonic import finite_wing_lift_curve_slope
 
 def compute_lift_curve_slope(params: AircraftParams, mach: float) -> float:
     """Compute the wing lift-curve slope CLα (per radian)."""
+    S = params.wing.area_m2
+    AR = params.wing.span_m ** 2 / S if S > 0 else params.wing.aspect_ratio
     return finite_wing_lift_curve_slope(
         mach,
-        params.wing.aspect_ratio,
+        AR,
         params.wing.leading_edge_sweep_deg,
     )
 

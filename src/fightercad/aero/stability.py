@@ -21,9 +21,8 @@ class StabilityResult:
 def compute_mac(params: AircraftParams) -> float:
     """Compute mean aerodynamic chord (MAC) of the wing."""
     S = params.wing.area_m2
-    AR = params.wing.aspect_ratio
+    span = params.wing.span_m
     lam = params.wing.taper_ratio
-    span = math.sqrt(AR * S)
     c_root = 2.0 * S / (span * (1.0 + lam))
     mac = c_root * (2.0 / 3.0) * (1 + lam + lam ** 2) / (1 + lam)
     return mac
@@ -39,7 +38,7 @@ def compute_stability(params: AircraftParams, mach: float) -> StabilityResult:
     S_ref = p.wing.area_m2
 
     mac = compute_mac(p)
-    span = math.sqrt(p.wing.aspect_ratio * S_ref)
+    span = p.wing.span_m
     c_root = 2.0 * S_ref / (span * (1.0 + p.wing.taper_ratio))
 
     # Wing aerodynamic center position

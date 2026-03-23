@@ -58,7 +58,9 @@ class CATIAPartBuilder:
 
         # Wing parameters
         self._add_parameter("Wing_Area", p.wing.area_m2 * 1e6, "mm")  # mm²
-        self._add_parameter("Wing_AR", p.wing.aspect_ratio)
+        wing_ar = p.wing.span_m ** 2 / p.wing.area_m2 if p.wing.area_m2 > 0 else p.wing.aspect_ratio
+        self._add_parameter("Wing_Span", p.wing.span_m * 1000, "mm")
+        self._add_parameter("Wing_AR", wing_ar)
         self._add_parameter("Wing_TaperRatio", p.wing.taper_ratio)
         self._add_parameter("Wing_SweepLE", p.wing.leading_edge_sweep_deg, "deg")
         self._add_parameter("Wing_Dihedral", p.wing.dihedral_deg, "deg")

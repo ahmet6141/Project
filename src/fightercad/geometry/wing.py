@@ -41,9 +41,13 @@ class WingBuilder:
         self.sections: list[WingSection] = []
 
     def _compute_planform(self) -> tuple[float, float, float]:
-        """Compute span, root chord, tip chord from wing params."""
+        """Compute half-span, root chord, tip chord from wing params.
+
+        Uses span_m directly as the primary sizing parameter.
+        AR is derived: AR = span² / area.
+        """
         p = self.p
-        span = math.sqrt(p.aspect_ratio * p.area_m2)  # full span
+        span = p.span_m
         half_span = span / 2.0
         root_chord = 2.0 * p.area_m2 / (span * (1.0 + p.taper_ratio))
         tip_chord = root_chord * p.taper_ratio

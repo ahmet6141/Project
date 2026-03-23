@@ -112,7 +112,7 @@ def compute_drag(
     # Approximate wing wetted area ~ 2.0 * planform area (upper + lower)
     S_wet_wing = 2.0 * S_ref * 1.02  # 2% extra for thickness
     # Mean aerodynamic chord
-    span = math.sqrt(p.wing.aspect_ratio * S_ref)
+    span = p.wing.span_m
     c_root = 2.0 * S_ref / (span * (1.0 + p.wing.taper_ratio))
     mac = c_root * (2.0 / 3.0) * (1 + p.wing.taper_ratio + p.wing.taper_ratio ** 2) / (1 + p.wing.taper_ratio)
     Re_wing = reynolds_number(mach, altitude_m, mac)
@@ -145,7 +145,7 @@ def compute_drag(
     CD0 = CD0_fuse + CD0_wing + CD0_vstab + CD0_intake + CD0_other
 
     # --- Induced drag ---
-    AR = p.wing.aspect_ratio
+    AR = p.wing.span_m ** 2 / S_ref if S_ref > 0 else p.wing.aspect_ratio
     # Oswald efficiency for delta wings (lower than conventional)
     e = 0.75 if p.wing.planform in ("delta", "cropped_delta") else 0.80
     if mach > 1.0:
