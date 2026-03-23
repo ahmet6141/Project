@@ -573,15 +573,47 @@ class FighterCADApp(tk.Tk):
         if self._assembler is None:
             messagebox.showinfo("Bilgi", "Önce 'Oluştur' butonuna basarak geometri oluşturun.")
             return
+
+        # Step 1: Check pywin32
+        try:
+            import win32com.client
+        except ImportError:
+            messagebox.showerror(
+                "pywin32 Eksik",
+                "CATIA COM bağlantısı için pywin32 gerekli.\n\n"
+                "Kurmak için terminalde:\n"
+                "pip install pywin32",
+            )
+            return
+
+        # Step 2: Try COM connection directly
+        self._set_status("CATIA'ya bağlanılıyor...")
+        try:
+            catia_app = win32com.client.GetActiveObject("CATIA.Application")
+            self._set_status(f"CATIA bulundu: {catia_app.Caption}")
+        except Exception as exc:
+            messagebox.showerror(
+                "CATIA Bağlantı Hatası",
+                f"CATIA COM nesnesine erişilemedi.\n\n"
+                f"Hata: {exc}\n\n"
+                f"Kontrol edin:\n"
+                f"• CATIA V5 açık ve hazır mı?\n"
+                f"• Python ve CATIA aynı yetki seviyesinde mi?\n"
+                f"  (ikisi de Admin veya ikisi de normal kullanıcı)\n"
+                f"• 64-bit Python ile 64-bit CATIA mı kullanıyorsunuz?",
+            )
+            return
+
+        # Step 3: Build in CATIA
         try:
             from fightercad.catia.live_update import CATIALiveUpdater
             self._catia = CATIALiveUpdater()
             if self._catia.connect(self._assembler):
-                self._set_status("CATIA bağlantısı kuruldu.")
+                self._set_status("CATIA bağlantısı kuruldu ve model oluşturuldu.")
             else:
-                messagebox.showwarning("Uyarı", "CATIA bağlantısı kurulamadı.\nCATIA'nın çalıştığından emin olun.")
+                messagebox.showwarning("Uyarı", "CATIA bağlantısı kuruldu ama model oluşturulamadı.")
         except Exception as exc:
-            messagebox.showerror("CATIA Hatası", str(exc))
+            messagebox.showerror("CATIA Model Hatası", f"Model oluşturma hatası:\n{exc}")
 
     def _on_catia_send(self) -> None:
         if not hasattr(self, "_catia") or self._catia is None:
