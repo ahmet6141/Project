@@ -40,7 +40,7 @@ class FuselageBuilder:
       3. Aft taper: smooth power-curve reduction to tail
     """
 
-    def __init__(self, params: FuselageParams, n_sections: int = 80, n_ring: int = 64):
+    def __init__(self, params: FuselageParams, n_sections: int = 100, n_ring: int = 80):
         self.p = params
         self.n_sections = n_sections
         self.n_ring = n_ring
@@ -120,7 +120,6 @@ class FuselageBuilder:
         L = p.length_m
         nose_len = p.nose_fineness_ratio * p.max_diameter_m
         cyl_end = L * p.cylindrical_end_pct
-        x_frac = x / L
 
         if x <= nose_len:
             # Nose: interpolate from nose aspect to body aspect
@@ -132,6 +131,45 @@ class FuselageBuilder:
             # Tail: interpolate to tail aspect
             t = (x - cyl_end) / (L - cyl_end) if (L - cyl_end) > 0 else 1.0
             return p.cross_section_aspect + _smoothstep(t) * (p.cross_section_aspect_tail - p.cross_section_aspect)
+
+    def _compute_bwb_extension(self, x: float, rh_base: float) -> float:
+        """Compute BWB lateral body extension at axial position x.
+
+        For BWB designs, the fuselage widens significantly at the wing station
+        to create a smooth body-wing blending zone. Returns additional half-width.
+        """
+        p = self.p
+        if p.body_wing_blend_ratio <= 0:
+            return 0.0
+
+        L = p.length_m
+        # Wing region: from wing_station to ~80% of fuselage
+        # (BWB body widens where the wing root would be)
+        wing_start_pct = getattr(p, '_wing_station_pct', 0.25)
+        wing_end_pct = min(wing_start_pct + 0.55, 0.85)
+        wing_start = L * wing_start_pct
+        wing_end = L * wing_end_pct
+
+        if x < wing_start or x > wing_end:
+            return 0.0
+
+        # Target half-width: inner panel span
+        target_hw = p.body_wing_inner_span_m if p.body_wing_inner_span_m > 0 else rh_base * 2.0
+
+        # Bell-shaped extension: smooth rise and fall
+        t = (x - wing_start) / (wing_end - wing_start)
+        # Peak at 30% of wing region (where max chord is)
+        peak = 0.30
+        if t <= peak:
+            s = t / peak
+            # Quintic smoothstep for C2 continuity
+            envelope = 6 * s**5 - 15 * s**4 + 10 * s**3
+        else:
+            s = (t - peak) / (1.0 - peak)
+            envelope = 1.0 - (6 * s**5 - 15 * s**4 + 10 * s**3)
+
+        extension = (target_hw - rh_base) * envelope * p.body_wing_blend_ratio
+        return max(0.0, extension)
 
     def _apply_canopy(
         self, pts: np.ndarray, x: float, theta: np.ndarray
@@ -235,6 +273,10 @@ class FuselageBuilder:
             else:
                 rh = r
                 rv = r
+
+            # BWB lateral extension (widens body at wing station)
+            bwb_ext = self._compute_bwb_extension(x, rh)
+            rh += bwb_ext
 
             if p.cross_section == "rounded_rect":
                 n_exp = 3.0

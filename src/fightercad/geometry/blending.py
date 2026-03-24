@@ -73,19 +73,20 @@ class BlendingOperator:
         )
 
         # Generate blending sections from fuselage surface to wing root
-        # Parameter t: 0 = fuselage surface, 1 = wing root
-        # Fairing width scales the fillet bulge prominence (wider fairing = smoother transition)
+        # Using quintic (C2) Hermite interpolation for curvature continuity
         width_scale = fairing_w / 0.1  # normalized to 100mm baseline
         blend_sections = []
         for i in range(n_blend_steps + 1):
             t = i / n_blend_steps
 
-            # Smooth interpolation (cosine ease for tangent continuity)
-            t_smooth = 0.5 * (1.0 - math.cos(t * math.pi))
+            # Quintic smoothstep for C² continuity: f(t) = 6t⁵ - 15t⁴ + 10t³
+            # This ensures zero 1st and 2nd derivatives at endpoints
+            t_smooth = 6.0 * t**5 - 15.0 * t**4 + 10.0 * t**3
 
-            # Fillet offset: maximum at t=0.5, zero at ends
-            # fairing_width_mm controls how far the bulge extends outward
-            fillet_offset = fillet_r * max(1.0, width_scale) * math.sin(t * math.pi)
+            # Fillet bulge: smooth bell curve with C2 onset/exit
+            # Uses sin²(πt) envelope which has zero derivative at ends
+            bulge_env = math.sin(math.pi * t) ** 2
+            fillet_offset = fillet_r * max(1.0, width_scale) * bulge_env
 
             # Interpolate each point between fuselage and wing profiles
             blended = fuse_profile * (1.0 - t_smooth) + wing_pts * t_smooth

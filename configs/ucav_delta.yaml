@@ -35,6 +35,8 @@ fuselage:
   canopy_height_mm: 0.0
   canopy_length_pct: 0.0
   dorsal_spine_height_mm: 0.0
+  body_wing_blend_ratio: 0.85  # BWB: body widens to meet wing root
+  body_wing_inner_span_m: 0.0  # auto-compute from wing inner panel
 
 wing:
   planform: "cropped_delta"
@@ -46,8 +48,8 @@ wing:
   trailing_edge_sweep_deg: 27.0 # planform alignment (MULDICON 26-30)
   dihedral_deg: 0.0          # 0 geometric (53 sweep = ~5 effective)
   twist_deg: -4.0            # 3-5 washout for tailless trim
-  root_airfoil: "naca64a004"
-  tip_airfoil: "biconvex_3"
+  root_airfoil: "supercritical_14"  # BWB: flat-top supercritical
+  tip_airfoil: "biconvex_3"         # thin supersonic tip
   leading_edge_radius_mm: 5.0   # 0.2-0.5% chord; moderate stealth/stall
   wing_station_pct: 0.25     # BWB: root LE near nose
   incidence_deg: 1.5         # 0-2 for BWB
@@ -61,6 +63,7 @@ wing:
   sawtooth_count: 14
   inner_panel_span_pct: 0.29 # SACCON: 29% semi-span
   inner_panel_sweep_deg: 53.0 # constant single LE angle (SACCON)
+  outer_panel_sweep_deg: 45.0 # cranked: outer panel less sweep
 
 control_surfaces:
   elevon_chord_pct: 0.25     # 20-25% chord
@@ -104,6 +107,8 @@ intake:
 
 exhaust:
   nozzle_type: "convergent"
+  nozzle_shape: "slot"       # stealth: flat slot nozzle
+  slot_aspect_ratio: 8.0     # W:H = 8:1 for low IR/RCS
   exit_diameter_m: 0.55
   throat_diameter_m: 0.50
   nozzle_length_m: 1.2       # serpentine for LOS blockage

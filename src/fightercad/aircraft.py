@@ -57,6 +57,13 @@ class AircraftAssembler:
         logger.info("Aircraft build started — %s (L=%.1fm)", p.meta.name, L)
 
         # 1. Build fuselage (initial pass)
+        # Pass wing info for BWB lateral extension
+        p.fuselage._wing_station_pct = p.wing.wing_station_pct
+        if p.fuselage.body_wing_inner_span_m <= 0 and p.fuselage.body_wing_blend_ratio > 0:
+            # Auto-compute BWB inner span from wing geometry
+            half_span = p.wing.span_m / 2.0
+            inner_span = half_span * p.wing.inner_panel_span_pct
+            p.fuselage.body_wing_inner_span_m = inner_span
         self.fuselage_builder = FuselageBuilder(p.fuselage)
         self.fuselage_builder.build()
         logger.info("  Fuselage built: %d sections, nose=%s",
@@ -424,6 +431,21 @@ class AircraftAssembler:
         offset = 0
 
         for name, (v, f) in self.components.items():
+            # Fix winding per-component using component centroid
+            if len(f) > 0 and len(v) > 0:
+                centroid = v.mean(axis=0)
+                v0 = v[f[:, 0]]
+                v1 = v[f[:, 1]]
+                v2 = v[f[:, 2]]
+                normals = np.cross(v1 - v0, v2 - v0)
+                face_centers = (v0 + v1 + v2) / 3.0
+                outward = face_centers - centroid
+                dots = np.sum(normals * outward, axis=1)
+                flip_mask = dots < 0
+                f = f.copy()
+                f[flip_mask, 1], f[flip_mask, 2] = (
+                    f[flip_mask, 2].copy(), f[flip_mask, 1].copy(),
+                )
             all_verts.append(v)
             if len(f) > 0:
                 all_faces.append(f + offset)
@@ -464,23 +486,6 @@ class AircraftAssembler:
                     (faces[:, 1] != faces[:, 2]) & \
                     (faces[:, 0] != faces[:, 2])
             faces = faces[valid]
-
-            # Fix face winding: ensure normals point outward from centroid
-            if len(faces) > 0:
-                centroid = verts.mean(axis=0)
-                v0 = verts[faces[:, 0]]
-                v1 = verts[faces[:, 1]]
-                v2 = verts[faces[:, 2]]
-                normals = np.cross(v1 - v0, v2 - v0)
-                face_centers = (v0 + v1 + v2) / 3.0
-                outward = face_centers - centroid
-                # Dot product: if normal points inward (dot < 0), flip winding
-                dots = np.sum(normals * outward, axis=1)
-                flip_mask = dots < 0
-                # Swap v1 and v2 to reverse winding
-                faces[flip_mask, 1], faces[flip_mask, 2] = (
-                    faces[flip_mask, 2].copy(), faces[flip_mask, 1].copy(),
-                )
 
         return verts, faces
 
@@ -530,13 +535,21 @@ class AircraftAssembler:
         # Degenerate triangles (near-zero area)
         degenerate = np.sum(areas < 1e-10)
 
-        # Normal consistency check (count flipped normals via neighbor analysis)
-        normals = cross / (np.linalg.norm(cross, axis=1, keepdims=True) + 1e-12)
-        # Simple check: normals should be mostly consistent in direction
-        avg_normal = normals.mean(axis=0)
-        avg_normal /= np.linalg.norm(avg_normal) + 1e-12
-        dots = np.sum(normals * avg_normal, axis=1)
-        flipped = int(np.sum(dots < 0))
+        # Normal consistency check: per-component centroid-based check
+        # For multi-component assemblies, use component centroids
+        flipped = 0
+        for name, (cv, cf) in self.components.items():
+            if len(cf) == 0 or len(cv) == 0:
+                continue
+            centroid = cv.mean(axis=0)
+            cv0 = cv[cf[:, 0]]
+            cv1 = cv[cf[:, 1]]
+            cv2 = cv[cf[:, 2]]
+            c_normals = np.cross(cv1 - cv0, cv2 - cv0)
+            c_centers = (cv0 + cv1 + cv2) / 3.0
+            c_outward = c_centers - centroid
+            c_dots = np.sum(c_normals * c_outward, axis=1)
+            flipped += int(np.sum(c_dots < 0))
 
         return {
             "total_vertices": len(verts),

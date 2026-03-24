@@ -41,7 +41,7 @@ class WingBuilder:
     z = vertical (up).
     """
 
-    def __init__(self, params: WingParams, n_span_sections: int = 20, n_airfoil_pts: int = 150):
+    def __init__(self, params: WingParams, n_span_sections: int = 28, n_airfoil_pts: int = 200):
         self.p = params
         self.n_span = n_span_sections
         self.n_af = n_airfoil_pts
@@ -166,7 +166,8 @@ class WingBuilder:
         y_split = half_span * split_eta
 
         inner_sweep_rad = math.radians(p.inner_panel_sweep_deg)
-        outer_sweep_rad = math.radians(p.leading_edge_sweep_deg)
+        outer_sweep_deg = p.outer_panel_sweep_deg if p.outer_panel_sweep_deg > 0 else p.leading_edge_sweep_deg
+        outer_sweep_rad = math.radians(outer_sweep_deg)
         dihedral_rad = math.radians(p.dihedral_deg)
 
         # Blend zone: ±10% of half-span around split point

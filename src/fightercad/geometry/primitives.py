@@ -228,6 +228,81 @@ def naca_4digit_symmetric(
     return np.vstack([upper, lower[::-1]])
 
 
+def supercritical_airfoil(
+    chord: float,
+    thickness_pct: float = 10.0,
+    num_points: int = 150,
+    le_radius_mm: float = 5.0,
+    camber_pct: float = 0.0,
+    te_thickness_mm: float = 0.0,
+) -> np.ndarray:
+    """Generate a supercritical-style airfoil.
+
+    Characteristics: flat upper surface, cambered lower surface with
+    cusp-like trailing edge. Optimized for transonic drag divergence
+    delay - used in BWB and modern UCAV designs.
+    """
+    t_max = thickness_pct / 100.0
+    half_n = num_points // 2
+    beta = np.linspace(0, math.pi, half_n)
+    x = chord * 0.5 * (1.0 - np.cos(beta))  # cosine spacing
+
+    xn = x / chord  # normalized
+
+    # Upper surface: relatively flat with slight convexity
+    # Uses a modified thickness distribution: flat from 20-70% chord
+    upper_y = np.zeros(half_n)
+    for i, xc in enumerate(xn):
+        if xc < 0.01:
+            upper_y[i] = t_max * chord * 0.5 * math.sqrt(xc / 0.01) * 0.3
+        elif xc < 0.20:
+            # Rise to max thickness
+            s = (xc - 0.01) / 0.19
+            upper_y[i] = t_max * chord * 0.5 * (0.3 + 0.7 * (3 * s**2 - 2 * s**3))
+        elif xc < 0.70:
+            # Flat top: nearly constant thickness
+            upper_y[i] = t_max * chord * 0.5 * (1.0 - 0.02 * ((xc - 0.20) / 0.50))
+        else:
+            # Gradual descent to TE
+            s = (xc - 0.70) / 0.30
+            upper_y[i] = t_max * chord * 0.5 * 0.98 * (1.0 - s**1.5)
+
+    # Lower surface: more cambered, with rear loading
+    lower_y = np.zeros(half_n)
+    for i, xc in enumerate(xn):
+        if xc < 0.01:
+            lower_y[i] = -t_max * chord * 0.5 * math.sqrt(xc / 0.01) * 0.3
+        elif xc < 0.15:
+            s = (xc - 0.01) / 0.14
+            lower_y[i] = -t_max * chord * 0.5 * (0.3 + 0.5 * (3 * s**2 - 2 * s**3))
+        elif xc < 0.50:
+            # Gentle curvature
+            s = (xc - 0.15) / 0.35
+            lower_y[i] = -t_max * chord * 0.5 * (0.8 - 0.15 * s)
+        else:
+            # Cusp-like rise toward TE (rear loading)
+            s = (xc - 0.50) / 0.50
+            lower_y[i] = -t_max * chord * 0.5 * 0.65 * (1.0 - s**2)
+
+    # Apply LE radius blending
+    _apply_le_radius(upper_y, x, chord, le_radius_mm)
+    lower_y_abs = np.abs(lower_y)
+    _apply_le_radius(lower_y_abs, x, chord, le_radius_mm)
+    lower_y = -lower_y_abs
+
+    # Camber
+    if abs(camber_pct) > 0.001:
+        yc = 4.0 * (camber_pct / 100.0) * chord * xn * (1.0 - xn)
+        upper_y += yc
+        lower_y += yc
+
+    upper = np.column_stack([x, upper_y])
+    lower = np.column_stack([x, lower_y])
+    upper, lower = _apply_blunt_te(upper, lower, te_thickness_mm)
+
+    return np.vstack([upper, lower[::-1]])
+
+
 def get_airfoil(
     airfoil_type: str,
     chord: float,
@@ -271,6 +346,20 @@ def get_airfoil(
         if thickness_override is not None:
             tpct = thickness_override * 100.0
         return naca_4digit_symmetric(chord, tpct, num_points,
+                                     le_radius_mm=le_radius_mm,
+                                     camber_pct=camber_pct,
+                                     te_thickness_mm=te_thickness_mm)
+    elif airfoil_type.startswith("supercritical"):
+        tpct = 10.0  # default 10%
+        parts = airfoil_type.split("_")
+        if len(parts) > 1:
+            try:
+                tpct = float(parts[1])
+            except ValueError:
+                pass
+        if thickness_override is not None:
+            tpct = thickness_override * 100.0
+        return supercritical_airfoil(chord, tpct, num_points,
                                      le_radius_mm=le_radius_mm,
                                      camber_pct=camber_pct,
                                      te_thickness_mm=te_thickness_mm)

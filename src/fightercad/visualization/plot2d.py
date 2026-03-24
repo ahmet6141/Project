@@ -1,7 +1,8 @@
 """2D plotting for aerodynamic analysis results.
 
 Provides embedded Matplotlib plots for the GUI analysis panel:
-drag polar, area distribution, Mach sweep, component breakdown.
+drag polar, area distribution, Mach sweep, component breakdown,
+planform outline, cross-section evolution, and side-view silhouette.
 """
 
 from __future__ import annotations
@@ -176,5 +177,136 @@ def plot_drag_breakdown(
     ax.set_xlabel("CD contribution")
     ax.set_title("Component Drag Breakdown")
     ax.grid(True, axis="x", alpha=0.3)
+    fig.tight_layout()
+    return fig
+
+
+def plot_planform(
+    assembler: Any,
+    ax: Any = None,
+) -> Any:
+    """Plot top-view planform outline from assembled components.
+
+    Shows fuselage body, wing LE/TE, stabilizers, and intake.
+    """
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 6))
+    else:
+        fig = ax.get_figure()
+
+    colors = {
+        "fuselage": "#4a90d9",
+        "wing": "#50b050",
+        "vtail": "#d94a4a",
+        "intake": "#d9a04a",
+        "exhaust": "#888888",
+        "other": "#aaaaaa",
+    }
+
+    for name, (v, f) in assembler.components.items():
+        if len(v) == 0:
+            continue
+        # Determine color
+        if "fuselage" in name:
+            c = colors["fuselage"]
+        elif "wing" in name or "aileron" in name or "elevon" in name:
+            c = colors["wing"]
+        elif "vtail" in name or "stab" in name:
+            c = colors["vtail"]
+        elif "intake" in name:
+            c = colors["intake"]
+        elif "exhaust" in name:
+            c = colors["exhaust"]
+        else:
+            c = colors["other"]
+
+        # Plot convex hull projection (top view: x vs y)
+        ax.scatter(v[:, 0], v[:, 1], s=0.1, c=c, alpha=0.3)
+
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Y (m)")
+    ax.set_title("Planform (Top View)")
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    return fig
+
+
+def plot_cross_sections(
+    fuselage_sections: list,
+    stations_pct: list[float] | None = None,
+    ax: Any = None,
+) -> Any:
+    """Plot fuselage cross-sections at several axial stations.
+
+    Parameters
+    ----------
+    fuselage_sections : list[FuselageSection]
+    stations_pct : list[float], optional
+        Fractions of fuselage length to plot (default: [0.1, 0.25, 0.45, 0.6, 0.8]).
+    """
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 4))
+    else:
+        fig = ax.get_figure()
+
+    if not fuselage_sections:
+        return fig
+
+    if stations_pct is None:
+        stations_pct = [0.10, 0.25, 0.45, 0.60, 0.80]
+
+    L = fuselage_sections[-1].x
+    colors = plt.cm.viridis(np.linspace(0.2, 0.9, len(stations_pct)))
+
+    for i, pct in enumerate(stations_pct):
+        target_x = L * pct
+        # Find closest section
+        best_sec = min(fuselage_sections, key=lambda s: abs(s.x - target_x))
+        pts = best_sec.points
+        y = pts[:, 1]
+        z = pts[:, 2]
+        # Close the loop
+        y = np.append(y, y[0])
+        z = np.append(z, z[0])
+        ax.plot(y, z, color=colors[i], linewidth=1.5,
+                label=f"x={best_sec.x:.1f}m ({pct*100:.0f}%)")
+
+    ax.set_xlabel("Y (m)")
+    ax.set_ylabel("Z (m)")
+    ax.set_title("Cross-Section Evolution")
+    ax.set_aspect("equal")
+    ax.legend(fontsize=7, loc="upper right")
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    return fig
+
+
+def plot_side_view(
+    assembler: Any,
+    ax: Any = None,
+) -> Any:
+    """Plot side-view silhouette of the aircraft."""
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 3))
+    else:
+        fig = ax.get_figure()
+
+    for name, (v, f) in assembler.components.items():
+        if len(v) == 0:
+            continue
+        if "fuselage" in name:
+            c = "#4a90d9"
+        elif "wing" in name:
+            c = "#50b050"
+        else:
+            c = "#aaaaaa"
+        ax.scatter(v[:, 0], v[:, 2], s=0.1, c=c, alpha=0.3)
+
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Z (m)")
+    ax.set_title("Side View")
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.3)
     fig.tight_layout()
     return fig

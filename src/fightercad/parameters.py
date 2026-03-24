@@ -45,6 +45,9 @@ class FuselageParams:
     canopy_length_pct: float = 0.12
     # Dorsal spine
     dorsal_spine_height_mm: float = 0.0  # 0=disabled
+    # BWB (Blended Wing Body) lateral extension
+    body_wing_blend_ratio: float = 0.0  # 0=separate tube, 1=full BWB blending
+    body_wing_inner_span_m: float = 0.0  # half-width of body at wing station (auto if 0)
 
 
 # ---------------------------------------------------------------------------
@@ -65,11 +68,13 @@ class WingParams:
         "biconvex_3", "biconvex_4", "biconvex_5",
         "diamond_3", "diamond_4", "diamond_5",
         "naca64a004",
+        "supercritical_10", "supercritical_12", "supercritical_14",
     ] = "biconvex_5"
     tip_airfoil: Literal[
         "biconvex_3", "biconvex_4", "biconvex_5",
         "diamond_3", "diamond_4", "diamond_5",
         "naca64a004",
+        "supercritical_10", "supercritical_12", "supercritical_14",
     ] = "biconvex_3"
     leading_edge_radius_mm: float = 1.5
     wing_station_pct: float = 0.45
@@ -87,6 +92,7 @@ class WingParams:
     # Inner/outer panel split
     inner_panel_span_pct: float = 0.35  # inner panel ends at 35% half-span
     inner_panel_sweep_deg: float = 60.0  # inner panel LE sweep (steeper)
+    outer_panel_sweep_deg: float = 0.0  # 0 = use leading_edge_sweep_deg
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +163,8 @@ class IntakeParams:
 @dataclass
 class ExhaustParams:
     nozzle_type: Literal["convergent_divergent", "convergent"] = "convergent_divergent"
+    nozzle_shape: Literal["round", "slot"] = "round"
+    slot_aspect_ratio: float = 6.0  # width/height for slot nozzle
     exit_diameter_m: float = 0.85
     throat_diameter_m: float = 0.65
     nozzle_length_m: float = 1.2
@@ -258,6 +266,8 @@ def create_ucav_params() -> AircraftParams:
             canopy_height_mm=0.0,
             canopy_length_pct=0.0,
             dorsal_spine_height_mm=0.0,
+            body_wing_blend_ratio=0.85,  # high BWB integration
+            body_wing_inner_span_m=0.0,  # auto-compute from wing inner panel
         ),
         wing=WingParams(
             planform="cropped_delta",
@@ -269,8 +279,8 @@ def create_ucav_params() -> AircraftParams:
             trailing_edge_sweep_deg=27.0,  # planform alignment (MULDICON: 26-30)
             dihedral_deg=0.0,  # 0 geometric (53 sweep gives ~5 effective dihedral)
             twist_deg=-4.0,  # 3-5 washout for tailless trim
-            root_airfoil="naca64a004",  # SACCON uses NACA 64A-006 base
-            tip_airfoil="biconvex_3",
+            root_airfoil="supercritical_14",  # BWB root: flat-top supercritical
+            tip_airfoil="biconvex_3",  # thin supersonic tip
             leading_edge_radius_mm=5.0,  # research: 0.2-0.5% chord; moderate
             wing_station_pct=0.25,  # BWB: wing root LE near nose (0-35% of length)
             incidence_deg=1.5,  # 0-2 for BWB (body camber provides cruise lift)
@@ -284,6 +294,7 @@ def create_ucav_params() -> AircraftParams:
             sawtooth_count=14,  # edges aligned to 53 LE sweep
             inner_panel_span_pct=0.29,  # SACCON: crank at 29% semi-span
             inner_panel_sweep_deg=53.0,  # SACCON: constant single LE angle
+            outer_panel_sweep_deg=45.0,  # cranked: outer panel less sweep
         ),
         blending=BlendingParams(
             root_fillet_radius_mm=150.0,  # massive BWB blend (no distinct fillet)
@@ -327,7 +338,9 @@ def create_ucav_params() -> AircraftParams:
         ),
         exhaust=ExhaustParams(
             nozzle_type="convergent",  # subsonic UCAV: simple convergent
-            exit_diameter_m=0.55,  # equiv circular; actual: slot ~0.7x0.08m
+            nozzle_shape="slot",  # stealth: flat slot nozzle (B-2/nEUROn style)
+            slot_aspect_ratio=8.0,  # W:H = 8:1 for low IR/RCS
+            exit_diameter_m=0.55,  # equiv circular diameter
             throat_diameter_m=0.50,
             nozzle_length_m=1.2,  # serpentine for LOS blockage (2-3x engine D)
         ),
