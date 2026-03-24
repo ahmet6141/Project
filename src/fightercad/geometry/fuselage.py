@@ -285,6 +285,26 @@ class FuselageBuilder:
                 denom = (np.abs(cos_t) ** n_exp + np.abs(sin_t) ** n_exp) ** (1.0 / n_exp)
                 py = rh * cos_t / denom
                 pz = rv * sin_t / denom
+            elif p.cross_section == "bwb_flat_top":
+                # BWB cross-section: flat upper surface, rounded lower
+                # Upper: superellipse (n=3) for flat top
+                # Lower: ellipse for smooth belly
+                cos_t = np.cos(theta)
+                sin_t = np.sin(theta)
+                py = np.zeros(self.n_ring)
+                pz = np.zeros(self.n_ring)
+                for k in range(self.n_ring):
+                    if sin_t[k] >= 0:
+                        # Upper: superellipse (flatter top)
+                        n_up = 2.8
+                        denom_k = (abs(cos_t[k]) ** n_up + abs(sin_t[k]) ** n_up) ** (1.0 / n_up)
+                        denom_k = max(denom_k, 1e-10)
+                        py[k] = rh * cos_t[k] / denom_k
+                        pz[k] = rv * 0.85 * sin_t[k] / denom_k  # slightly less height
+                    else:
+                        # Lower: standard ellipse (rounded belly)
+                        py[k] = rh * cos_t[k]
+                        pz[k] = rv * sin_t[k]
             else:
                 py = rh * np.cos(theta)
                 pz = rv * np.sin(theta)

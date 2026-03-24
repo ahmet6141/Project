@@ -99,11 +99,23 @@ class AircraftAssembler:
         self.components["fuselage"] = (fv, ff)
         logger.info("  Fuselage mesh: %d verts, %d faces", len(fv), len(ff))
 
-        # Fuselage radii at wing station
-        fuse_rh = fuse_r * (math.sqrt(p.fuselage.cross_section_aspect)
-                            if p.fuselage.cross_section != "circular" else 1.0)
-        fuse_rv = fuse_r / (math.sqrt(p.fuselage.cross_section_aspect)
-                            if p.fuselage.cross_section != "circular" else 1.0)
+        # Fuselage radii at wing station — use actual section data
+        # Find the MAXIMUM fuselage rh across the entire wing chord range
+        # to ensure the wing root is never inside the fuselage
+        fuse_rh_base = fuse_r * (math.sqrt(p.fuselage.cross_section_aspect)
+                                 if p.fuselage.cross_section != "circular" else 1.0)
+        fuse_rv_base = fuse_r / (math.sqrt(p.fuselage.cross_section_aspect)
+                                 if p.fuselage.cross_section != "circular" else 1.0)
+        fuse_rh = fuse_rh_base
+        fuse_rv = fuse_rv_base
+        if self.fuselage_builder.sections:
+            half_span, root_c_tmp, _ = WingBuilder(p.wing)._compute_planform()
+            wing_x_end = wing_x_offset + root_c_tmp
+            relevant = [s for s in self.fuselage_builder.sections
+                        if wing_x_offset - 0.1 <= s.x <= wing_x_end + 0.1]
+            if relevant:
+                fuse_rh = max(s.radius_h for s in relevant)
+                fuse_rv = max(s.radius_v for s in relevant)
 
         # Build panelled wings with control surfaces
         logger.info("  Wing: span=%.1fm, sweep=%.0f°, airfoil=%s→%s",
@@ -137,9 +149,18 @@ class AircraftAssembler:
     def _build_wing_panels(
         self, wing_x_offset: float, fuse_rh: float, fuse_rv: float
     ) -> None:
-        """Build inner/outer wing panels with control surfaces for both sides."""
+        """Build inner/outer wing panels with control surfaces for both sides.
+
+        The wing builder generates sections from y=0 to y=half_span.
+        We scale spanwise coordinates so that after adding the fuselage
+        offset, the total half-span from centerline equals span_m/2.
+        This ensures correct total wingspan.
+        """
         p = self.params
         cs = p.control_surfaces
+        half_span = p.wing.span_m / 2.0
+        # Scale factor: wing should extend from fuse_rh to half_span
+        y_scale = (half_span - fuse_rh) / half_span if half_span > fuse_rh else 1.0
 
         self.blending_op = BlendingOperator(p.blending)
 
@@ -154,7 +175,8 @@ class AircraftAssembler:
                 outer_secs, cs.aileron_chord_pct, cs.aileron_span_pct,
             )
 
-            # Generate meshes and offset to aircraft coordinates
+            # Generate meshes and position in aircraft coordinates
+            # Scale y so that tip ends at half_span from centerline
             for comp_name, secs in [
                 (f"wing_inner_{side_label}", inner_main),
                 (f"wing_outer_{side_label}", outer_main),
@@ -167,7 +189,8 @@ class AircraftAssembler:
                 if len(verts) == 0:
                     continue
                 verts[:, 0] += wing_x_offset
-                verts[:, 1] += fuse_rh * side
+                # Scale y so panel spans from fuse_rh to half_span
+                verts[:, 1] = verts[:, 1] * y_scale + fuse_rh * side
                 self.components[comp_name] = (verts, faces)
                 logger.debug("    %s: %d verts, %d faces", comp_name, len(verts), len(faces))
 
@@ -181,14 +204,14 @@ class AircraftAssembler:
                     )
                     if len(st_v) > 0:
                         st_v[:, 0] += wing_x_offset
-                        st_v[:, 1] += fuse_rh * side
+                        st_v[:, 1] = st_v[:, 1] * y_scale + fuse_rh * side
                         self.components[f"sawtooth_te_{side_label}"] = (st_v, st_f)
 
             # Wing-fuselage fairing (use inner panel root section)
             if inner_main:
                 wing_root_pts = inner_main[0].points_3d.copy()
                 wing_root_pts[:, 0] += wing_x_offset
-                wing_root_pts[:, 1] += fuse_rh * side
+                wing_root_pts[:, 1] = wing_root_pts[:, 1] * y_scale + fuse_rh * side
 
                 fv, ff = self.blending_op.build_wing_fuselage_fairing(
                     wing_root_sections=wing_root_pts,

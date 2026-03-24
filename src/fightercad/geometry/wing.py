@@ -136,8 +136,8 @@ class WingBuilder:
         half_span, root_chord, tip_chord = self._compute_planform()
         sweep_le_rad = math.radians(p.leading_edge_sweep_deg)
 
-        # Cosine distribution for better tip resolution
-        eta = 0.5 * (1.0 - np.cos(np.linspace(0, math.pi / 2, self.n_span)))
+        # Cosine distribution: denser near root and tip, full span coverage
+        eta = 0.5 * (1.0 - np.cos(np.linspace(0, math.pi, self.n_span)))
         y_stations = eta * half_span
 
         sections = []
@@ -176,12 +176,12 @@ class WingBuilder:
         n_inner = max(4, self.n_span // 2)
         n_outer = max(4, self.n_span - n_inner + 1)
 
-        # Inner panel stations (cosine within inner span)
-        eta_inner = 0.5 * (1.0 - np.cos(np.linspace(0, math.pi / 2, n_inner)))
+        # Inner panel stations (cosine: full coverage 0 → y_split)
+        eta_inner = 0.5 * (1.0 - np.cos(np.linspace(0, math.pi, n_inner)))
         y_inner = eta_inner * y_split
 
-        # Outer panel stations
-        eta_outer = 0.5 * (1.0 - np.cos(np.linspace(0, math.pi / 2, n_outer)))
+        # Outer panel stations (cosine: full coverage y_split → half_span)
+        eta_outer = 0.5 * (1.0 - np.cos(np.linspace(0, math.pi, n_outer)))
         y_outer = y_split + eta_outer * (half_span - y_split)
 
         def _get_sweep_rad(y: float) -> float:

@@ -23,7 +23,7 @@ fuselage:
   haack_C: 0.0                 # C=0: LD-Haack, smoothest for stealth
   aft_taper_ratio: 0.35        # narrows to 35% at nozzle
   cockpit_station_pct: 0.12    # avionics bay (no cockpit)
-  cross_section: "elliptical"
+  cross_section: "bwb_flat_top"    # flat upper + rounded lower (BWB style)
   cross_section_aspect: 2.0    # W:H=2:1 flattened (B-2/X-47B style)
   cylindrical_end_pct: 0.45    # no true cylinder on BWB; max area 40-45%
   aft_taper_power: 3.0         # cubic: smooth 2nd derivative for area rule
@@ -35,7 +35,7 @@ fuselage:
   canopy_height_mm: 0.0
   canopy_length_pct: 0.0
   dorsal_spine_height_mm: 0.0
-  body_wing_blend_ratio: 0.85  # BWB: body widens to meet wing root
+  body_wing_blend_ratio: 0.0   # BWB blend handled by fairing, not fuselage widening
   body_wing_inner_span_m: 0.0  # auto-compute from wing inner panel
 
 wing:
@@ -73,13 +73,13 @@ control_surfaces:
   deflection_deg: 0.0
 
 blending:
-  root_fillet_radius_mm: 150.0  # massive BWB blend
-  leading_edge_fillet_mm: 50.0
-  trailing_edge_fillet_mm: 30.0
+  root_fillet_radius_mm: 80.0   # moderate fillet
+  leading_edge_fillet_mm: 40.0
+  trailing_edge_fillet_mm: 25.0
   blending_mode: "smooth"
   strake_length_m: 0.6
   strake_sweep_deg: 65.0
-  fairing_width_mm: 400.0    # 400mm BWB blend zone
+  fairing_width_mm: 250.0    # 250mm blend zone
   stabilizer_root_fillet_mm: 30.0
   intake_fuselage_fillet_mm: 35.0
 

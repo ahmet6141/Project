@@ -29,7 +29,7 @@ class FuselageParams:
     haack_C: float = 0.0  # 0=Sears-Haack, 0.333=LV-Haack, 1.0=Von Karman
     aft_taper_ratio: float = 0.6
     cockpit_station_pct: float = 0.15
-    cross_section: Literal["circular", "elliptical", "rounded_rect"] = "elliptical"
+    cross_section: Literal["circular", "elliptical", "rounded_rect", "bwb_flat_top"] = "elliptical"
     cross_section_aspect: float = 1.15  # width / height at mid-body
     # Zone control
     cylindrical_end_pct: float = 0.75  # where cylindrical section ends
@@ -254,7 +254,7 @@ def create_ucav_params() -> AircraftParams:
             haack_C=0.0,  # C=0: LD-Haack, smoothest profile for stealth
             aft_taper_ratio=0.35,  # narrows to 35% at nozzle (X-47B/nEUROn)
             cockpit_station_pct=0.12,  # avionics bay (no cockpit)
-            cross_section="elliptical",
+            cross_section="bwb_flat_top",  # flat upper, rounded lower
             cross_section_aspect=2.0,  # W:H=2:1 flattened (B-2/X-47B style)
             cylindrical_end_pct=0.45,  # no true cylinder on BWB; max area ~40-45%
             aft_taper_power=3.0,  # cubic: smooth 2nd derivative for area rule
@@ -266,8 +266,8 @@ def create_ucav_params() -> AircraftParams:
             canopy_height_mm=0.0,
             canopy_length_pct=0.0,
             dorsal_spine_height_mm=0.0,
-            body_wing_blend_ratio=0.85,  # high BWB integration
-            body_wing_inner_span_m=0.0,  # auto-compute from wing inner panel
+            body_wing_blend_ratio=0.0,  # handled by fairing, not fuselage widening
+            body_wing_inner_span_m=0.0,
         ),
         wing=WingParams(
             planform="cropped_delta",
@@ -297,13 +297,13 @@ def create_ucav_params() -> AircraftParams:
             outer_panel_sweep_deg=45.0,  # cranked: outer panel less sweep
         ),
         blending=BlendingParams(
-            root_fillet_radius_mm=150.0,  # massive BWB blend (no distinct fillet)
-            leading_edge_fillet_mm=50.0,  # LE merges into nose without break
-            trailing_edge_fillet_mm=30.0,
+            root_fillet_radius_mm=80.0,  # moderate fillet — fairing does the blending
+            leading_edge_fillet_mm=40.0,
+            trailing_edge_fillet_mm=25.0,
             blending_mode="smooth",
             strake_length_m=0.6,  # short LEX blended into forebody chine
             strake_sweep_deg=65.0,
-            fairing_width_mm=400.0,  # 400mm BWB blend zone (25-35% semi-span)
+            fairing_width_mm=250.0,  # 250mm blend zone
             stabilizer_root_fillet_mm=30.0,
             intake_fuselage_fillet_mm=35.0,
         ),
