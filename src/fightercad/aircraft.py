@@ -453,22 +453,31 @@ class AircraftAssembler:
         all_faces = []
         offset = 0
 
+        # Volumetric components where centroid-based normal fixing works
+        volumetric_names = {"fuselage", "exhaust", "intake_dorsal",
+                            "intake_collar_dorsal", "intake_chin",
+                            "intake_collar_chin"}
+
         for name, (v, f) in self.components.items():
-            # Fix winding per-component using component centroid
             if len(f) > 0 and len(v) > 0:
-                centroid = v.mean(axis=0)
-                v0 = v[f[:, 0]]
-                v1 = v[f[:, 1]]
-                v2 = v[f[:, 2]]
-                normals = np.cross(v1 - v0, v2 - v0)
-                face_centers = (v0 + v1 + v2) / 3.0
-                outward = face_centers - centroid
-                dots = np.sum(normals * outward, axis=1)
-                flip_mask = dots < 0
                 f = f.copy()
-                f[flip_mask, 1], f[flip_mask, 2] = (
-                    f[flip_mask, 2].copy(), f[flip_mask, 1].copy(),
-                )
+
+                # Only fix normals for closed volumetric bodies
+                # Open surfaces (wings, fairings, control surfaces) have
+                # correct winding from the mesh builder — don't touch them
+                if name in volumetric_names:
+                    centroid = v.mean(axis=0)
+                    v0 = v[f[:, 0]]
+                    v1 = v[f[:, 1]]
+                    v2 = v[f[:, 2]]
+                    normals = np.cross(v1 - v0, v2 - v0)
+                    face_centers = (v0 + v1 + v2) / 3.0
+                    outward = face_centers - centroid
+                    dots = np.sum(normals * outward, axis=1)
+                    flip_mask = dots < 0
+                    f[flip_mask, 1], f[flip_mask, 2] = (
+                        f[flip_mask, 2].copy(), f[flip_mask, 1].copy(),
+                    )
             all_verts.append(v)
             if len(f) > 0:
                 all_faces.append(f + offset)
@@ -558,21 +567,32 @@ class AircraftAssembler:
         # Degenerate triangles (near-zero area)
         degenerate = np.sum(areas < 1e-10)
 
-        # Normal consistency check: per-component centroid-based check
-        # For multi-component assemblies, use component centroids
+        # Normal consistency: check volumetric components via centroid,
+        # open surfaces via neighbor consistency (face majority voting)
+        volumetric = {"fuselage", "exhaust", "intake_dorsal",
+                       "intake_collar_dorsal", "intake_chin",
+                       "intake_collar_chin"}
         flipped = 0
         for name, (cv, cf) in self.components.items():
             if len(cf) == 0 or len(cv) == 0:
                 continue
-            centroid = cv.mean(axis=0)
             cv0 = cv[cf[:, 0]]
             cv1 = cv[cf[:, 1]]
             cv2 = cv[cf[:, 2]]
             c_normals = np.cross(cv1 - cv0, cv2 - cv0)
-            c_centers = (cv0 + cv1 + cv2) / 3.0
-            c_outward = c_centers - centroid
-            c_dots = np.sum(c_normals * c_outward, axis=1)
-            flipped += int(np.sum(c_dots < 0))
+            if name in volumetric:
+                centroid = cv.mean(axis=0)
+                c_centers = (cv0 + cv1 + cv2) / 3.0
+                c_outward = c_centers - centroid
+                c_dots = np.sum(c_normals * c_outward, axis=1)
+                flipped += int(np.sum(c_dots < 0))
+            else:
+                # Open surface: count minority-direction faces
+                avg_n = c_normals.mean(axis=0)
+                nm = np.linalg.norm(avg_n)
+                if nm > 1e-6:
+                    c_dots = np.sum(c_normals * (avg_n / nm), axis=1)
+                    flipped += int(np.sum(c_dots < 0))
 
         return {
             "total_vertices": len(verts),

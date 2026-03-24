@@ -184,12 +184,12 @@ class IntakeBuilder:
         return sections
 
     def _build_dorsal(self, fuselage_radius_v: float) -> list[np.ndarray]:
-        """Build a single dorsal (top-mounted) intake above the fuselage.
+        """Build a single dorsal (top-mounted) intake flush with the fuselage.
 
-        The intake sits on the upper fuselage surface (positive z),
-        centered on y=0.  The duct curves downward through the fuselage
+        The intake mouth is flush with the upper fuselage surface (no external
+        scoop or bump). The duct curves downward through the fuselage interior
         to reach the engine face at the aircraft centerline.
-        Common on stealth UCAVs (nEUROn, X-47B).
+        This is the stealth approach used on nEUROn, RQ-170, X-47B.
         """
         p = self.p
         capture_area = p.capture_area_m2
@@ -199,27 +199,27 @@ class IntakeBuilder:
             self.section_points = []
             return []
 
-        # Capture face: wide and flat (dorsal style)
+        # Capture face: wide and flat (dorsal flush style)
         h_cap = math.sqrt(capture_area / aspect)
         w_cap = capture_area / h_cap
 
         # Engine face (circular)
         r_engine = math.sqrt(capture_area / math.pi)
 
-        # BLD offset above fuselage
+        # Flush dorsal: intake mouth is IN the fuselage surface
+        # The top edge of the capture aligns with the fuselage top
+        # The duct goes downward from there (no external bump)
         bld = p.boundary_layer_diverter_mm / 1000.0
-        z_base = fuselage_radius_v + bld
-
-        # Compression ramp (downward for dorsal)
-        ramp_rad = math.radians(p.ramp_angle_deg)
-        ramp_amplitude = 0.2 * duct_length * math.tan(ramp_rad)
+        z_fuse_top = fuselage_radius_v * 0.85  # actual fuselage top (bwb_flat_top)
+        z_base = z_fuse_top - h_cap * 0.3  # capture center inside fuselage
 
         sections = []
         x_stations = np.linspace(0, duct_length, self.n_sections)
 
         for i, dx in enumerate(x_stations):
             t = dx / duct_length
-            t_smooth = 0.5 * (1.0 - math.cos(t * math.pi))
+            # Quintic smoothstep for C2 duct path
+            t_smooth = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
 
             # Superellipse: 2.8 (flatter rect for wide dorsal) → 2.0 (circle)
             n_exp = 2.8 - 0.8 * t_smooth
@@ -228,15 +228,12 @@ class IntakeBuilder:
             a = w_cap / 2.0 * (1.0 - t_smooth) + r_engine * t_smooth
             b = h_cap / 2.0 * (1.0 - t_smooth) + r_engine * t_smooth
 
-            # S-duct: duct curves down from dorsal to engine centerline
-            # z goes from z_base → ~0 (engine face near centerline)
-            z_curr = z_base * (1.0 - 0.85 * t_smooth)
-
-            # Ramp: negative z (downward into fuselage) at forward section
-            ramp_z = -ramp_amplitude * math.sin(math.pi * t / 2.0) ** 2 * (1.0 - t)
+            # S-duct path: starts at fuselage surface, curves down inside
+            # z goes from z_base (flush with surface) → ~0 (engine centerline)
+            z_curr = z_base * (1.0 - 0.90 * t_smooth)
 
             sec = self._make_superellipse_section(
-                a, b, n_exp, dx, 0.0, z_curr + ramp_z
+                a, b, n_exp, dx, 0.0, z_curr
             )
             sections.append(sec)
 
@@ -350,10 +347,11 @@ class IntakeBuilder:
         half_h: float,
         plate_length: float,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Build BLD plate for dorsal intake (horizontal plate on top of fuselage)."""
+        """Build BLD plate for dorsal intake (thin flush plate on fuselage top)."""
         half_w = w_cap / 2.0 * 0.9
-        z_fuse = fuselage_radius_v  # fuselage top
-        z_intake = fuselage_radius_v + bld  # intake bottom
+        z_fuse = fuselage_radius_v * 0.85  # fuselage top (bwb_flat_top)
+        # Flush: BLD sits at fuselage surface level
+        z_intake = z_fuse + min(bld, 0.003)  # max 3mm protrusion
 
         verts = np.array([
             # Front face

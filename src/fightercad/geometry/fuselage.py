@@ -369,9 +369,10 @@ class FuselageBuilder:
             tip = np.mean(first_sec.points, axis=0, keepdims=True)
         tip_idx = len(verts)
         verts = np.vstack([verts, tip])
+        # Nose tip cap — winding must produce outward normal (toward -x)
         for j in range(n_ring):
             j1 = (j + 1) % n_ring
-            faces.append([tip_idx, j, j1])
+            faces.append([tip_idx, j1, j])
 
         # Tail closure
         last_sec = self.sections[-1]
@@ -382,8 +383,9 @@ class FuselageBuilder:
         tail_idx = len(verts)
         verts = np.vstack([verts, tail])
         base_last = (n_sec - 1) * n_ring
+        # Tail cap — winding must produce outward normal (toward +x)
         for j in range(n_ring):
             j1 = (j + 1) % n_ring
-            faces.append([tail_idx, base_last + j1, base_last + j])
+            faces.append([tail_idx, base_last + j, base_last + j1])
 
         return verts, np.array(faces)
