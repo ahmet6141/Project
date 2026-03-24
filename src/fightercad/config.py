@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+logger = logging.getLogger("fightercad")
 
 from fightercad.parameters import (
     AircraftParams,
@@ -51,6 +54,7 @@ def _build_section(cls: type, data: dict[str, Any]) -> Any:
 
 def load_config(path: str | Path) -> AircraftParams:
     """Load aircraft parameters from a YAML file."""
+    logger.info("Loading config from %s", path)
     with open(path, "r", encoding="utf-8") as fh:
         raw: dict[str, Any] = yaml.safe_load(fh) or {}
 
@@ -58,10 +62,15 @@ def load_config(path: str | Path) -> AircraftParams:
     for key, cls in _SECTION_MAP.items():
         if key in raw:
             sections[key] = _build_section(cls, raw[key])
+            logger.debug("  Loaded section: %s", key)
         else:
             sections[key] = cls()
+            logger.debug("  Default section: %s", key)
 
-    return AircraftParams(**sections)
+    params = AircraftParams(**sections)
+    logger.info("Config loaded: %s (type=%s, Mach=%.2f)",
+                params.meta.name, params.meta.aircraft_type, params.meta.design_mach)
+    return params
 
 
 def save_config(params: AircraftParams, path: str | Path) -> None:
@@ -77,7 +86,9 @@ def load_preset(name: str) -> AircraftParams:
     Available presets: 'ucav', 'fighter' (default).
     """
     if name in _PRESETS:
+        logger.info("Loading preset: %s", name)
         return _PRESETS[name]()
+    logger.info("Loading default fighter preset (no preset named '%s')", name)
     return AircraftParams()
 
 

@@ -6,9 +6,12 @@ area-rule correction, and provides unified mesh output.
 
 from __future__ import annotations
 
+import logging
 import math
 
 import numpy as np
+
+logger = logging.getLogger("fightercad")
 
 from fightercad.parameters import AircraftParams
 from fightercad.geometry.fuselage import FuselageBuilder
@@ -51,10 +54,13 @@ class AircraftAssembler:
         """
         p = self.params
         L = p.fuselage.length_m
+        logger.info("Aircraft build started — %s (L=%.1fm)", p.meta.name, L)
 
         # 1. Build fuselage (initial pass)
         self.fuselage_builder = FuselageBuilder(p.fuselage)
         self.fuselage_builder.build()
+        logger.info("  Fuselage built: %d sections, nose=%s",
+                     len(self.fuselage_builder.sections), p.fuselage.nose_profile)
 
         # 2. Build wings (panelled)
         self.wing_builder = WingBuilder(p.wing)
@@ -84,6 +90,7 @@ class AircraftAssembler:
         # Get fuselage mesh
         fv, ff = self.fuselage_builder.get_mesh()
         self.components["fuselage"] = (fv, ff)
+        logger.info("  Fuselage mesh: %d verts, %d faces", len(fv), len(ff))
 
         # Fuselage radii at wing station
         fuse_rh = fuse_r * (math.sqrt(p.fuselage.cross_section_aspect)
@@ -92,21 +99,32 @@ class AircraftAssembler:
                             if p.fuselage.cross_section != "circular" else 1.0)
 
         # Build panelled wings with control surfaces
+        logger.info("  Wing: span=%.1fm, sweep=%.0f°, airfoil=%s→%s",
+                     p.wing.span_m, p.wing.leading_edge_sweep_deg,
+                     p.wing.root_airfoil, p.wing.tip_airfoil)
         self._build_wing_panels(wing_x_offset, fuse_rh, fuse_rv)
 
         # 4. Vertical stabilizer / V-tail / tailless
+        logger.info("  Stabilizer: tailless=%s, v_tail=%s",
+                     p.vertical_stabilizer.tailless, p.vertical_stabilizer.v_tail)
         self._build_stabilizers(L)
 
         # 5. Intakes
+        logger.info("  Intake: type=%s, count=%d", p.intake.intake_type, p.intake.intake_count)
         self._build_intakes(L, fuse_rh, fuse_rv)
 
         # 6. Exhaust nozzle
+        logger.info("  Exhaust: type=%s, exit_d=%.2fm", p.exhaust.nozzle_type, p.exhaust.exit_diameter_m)
         self.exhaust_builder = ExhaustBuilder(p.exhaust)
         self.exhaust_builder.build()
         ev, ef = self.exhaust_builder.get_mesh()
         ev[:, 0] += L - p.exhaust.nozzle_length_m
         self.components["exhaust"] = (ev, ef)
 
+        total_v = sum(len(v) for v, _ in self.components.values())
+        total_f = sum(len(f) for _, f in self.components.values())
+        logger.info("Build complete: %d components, %d verts, %d faces",
+                     len(self.components), total_v, total_f)
         return self.components
 
     def _build_wing_panels(
@@ -144,6 +162,7 @@ class AircraftAssembler:
                 verts[:, 0] += wing_x_offset
                 verts[:, 1] += fuse_rh * side
                 self.components[comp_name] = (verts, faces)
+                logger.debug("    %s: %d verts, %d faces", comp_name, len(verts), len(faces))
 
             # Saw-tooth trailing edge (stealth feature)
             if p.wing.sawtooth_te_enabled:

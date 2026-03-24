@@ -386,10 +386,11 @@ class WingBuilder:
             b0 = sum(len(sections[k].points_3d) for k in range(i))
             b1 = b0 + n_pts_i
             n_common = min(n_pts_i, n_pts_j)
-            for j in range(n_common - 1):
+            for j in range(n_common):
+                j1 = (j + 1) % n_common
                 v0 = b0 + j
-                v1 = b0 + j + 1
-                v2 = b1 + j + 1
+                v1 = b0 + j1
+                v2 = b1 + j1
                 v3 = b1 + j
                 faces.append([v0, v1, v2])
                 faces.append([v0, v2, v3])
@@ -402,8 +403,9 @@ class WingBuilder:
             tip_center = tip_pts.mean(axis=0)
             center_idx = len(verts)
             verts = np.vstack([verts, tip_center.reshape(1, 3)])
-            for j in range(n_tip - 1):
-                faces.append([center_idx, base_tip + j, base_tip + j + 1])
+            for j in range(n_tip):
+                j1 = (j + 1) % n_tip
+                faces.append([center_idx, base_tip + j, base_tip + j1])
 
         return (verts, np.array(faces)) if faces else (verts, np.zeros((0, 3), dtype=int))
 
