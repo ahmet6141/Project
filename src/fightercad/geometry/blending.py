@@ -166,7 +166,7 @@ class BlendingOperator:
                 faces.append([v0, v2, v1])
                 faces.append([v0, v3, v2])
 
-        return verts, np.array(faces) if faces else (verts, np.zeros((0, 3), dtype=int))
+        return (verts, np.array(faces)) if faces else (verts, np.zeros((0, 3), dtype=int))
 
     def _fuselage_surface_profile(
         self,
@@ -283,7 +283,7 @@ class BlendingOperator:
                 faces.append([v0, v1, v2])
                 faces.append([v0, v2, v3])
 
-        return verts, np.array(faces) if faces else (verts, np.zeros((0, 3), dtype=int))
+        return (verts, np.array(faces)) if faces else (verts, np.zeros((0, 3), dtype=int))
 
     def get_blend_info(self) -> dict:
         """Return a summary of all blending parameters for reporting."""

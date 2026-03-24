@@ -90,6 +90,9 @@ class IntakeBuilder:
         capture_area = p.capture_area_m2
         aspect = p.capture_aspect_ratio
         duct_length = p.duct_length_m
+        if duct_length <= 0:
+            self.section_points = []
+            return []
 
         h_cap = math.sqrt(capture_area / aspect)
         w_cap = capture_area / h_cap
@@ -132,6 +135,9 @@ class IntakeBuilder:
         capture_area = p.capture_area_m2
         aspect = p.capture_aspect_ratio
         duct_length = p.duct_length_m
+        if duct_length <= 0:
+            self.section_points = []
+            return []
 
         # Capture face: wider than tall (chin style)
         h_cap = math.sqrt(capture_area / aspect)
@@ -189,6 +195,9 @@ class IntakeBuilder:
         capture_area = p.capture_area_m2
         aspect = p.capture_aspect_ratio
         duct_length = p.duct_length_m
+        if duct_length <= 0:
+            self.section_points = []
+            return []
 
         # Capture face: wide and flat (dorsal style)
         h_cap = math.sqrt(capture_area / aspect)

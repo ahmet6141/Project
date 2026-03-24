@@ -37,7 +37,7 @@ _SECTION_MAP: dict[str, type] = {
 }
 
 # Preset configurations
-_PRESETS: dict[str, callable] = {
+_PRESETS: dict[str, Any] = {
     "ucav": create_ucav_params,
 }
 

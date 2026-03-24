@@ -34,9 +34,14 @@ class ExhaustBuilder:
         r_throat = p.throat_diameter_m / 2.0
         r_exit = p.exit_diameter_m / 2.0
         L = p.nozzle_length_m
+        if L <= 0:
+            self.section_points = []
+            return []
 
-        # Throat position at ~40% of nozzle length
-        throat_frac = 0.4
+        is_cd = p.nozzle_type == "convergent_divergent"
+
+        # Throat position: 40% for C-D, 100% for convergent-only
+        throat_frac = 0.4 if is_cd else 1.0
         x_stations = np.linspace(0, L, self.n_sections)
         theta = np.linspace(0, 2 * math.pi, self.n_ring, endpoint=False)
 
@@ -47,9 +52,10 @@ class ExhaustBuilder:
             if t <= throat_frac:
                 # Convergent section (cosine contour for smooth transition)
                 s = t / throat_frac
-                r = r_inlet + (r_throat - r_inlet) * (0.5 - 0.5 * math.cos(math.pi * s))
+                r_target = r_throat if is_cd else r_exit
+                r = r_inlet + (r_target - r_inlet) * (0.5 - 0.5 * math.cos(math.pi * s))
             else:
-                # Divergent section (parabolic/bell contour)
+                # Divergent section (only for convergent-divergent nozzles)
                 s = (t - throat_frac) / (1.0 - throat_frac)
                 r = r_throat + (r_exit - r_throat) * (s ** 0.8)
 

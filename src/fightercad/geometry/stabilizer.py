@@ -181,4 +181,4 @@ class StabilizerBuilder:
                 faces.append([b0 + j, b0 + j + 1, b1 + j + 1])
                 faces.append([b0 + j, b1 + j + 1, b1 + j])
 
-        return verts, np.array(faces) if faces else (verts, np.zeros((0, 3), dtype=int))
+        return (verts, np.array(faces)) if faces else (verts, np.zeros((0, 3), dtype=int))

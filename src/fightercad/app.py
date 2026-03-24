@@ -725,7 +725,24 @@ class FighterCADApp(tk.Tk):
             return
         self._set_status("STEP export ediliyor...")
         try:
-            export_step(self._assembler.components, path)
+            # Build sections dict from component builders (STEP needs
+            # cross-section rings for lofting, not mesh vertices/faces)
+            sections_dict: dict[str, list[np.ndarray]] = {}
+            asm = self._assembler
+            if asm.fuselage_builder and asm.fuselage_builder.sections:
+                sections_dict["fuselage"] = [
+                    s.ring_points for s in asm.fuselage_builder.sections
+                    if hasattr(s, "ring_points")
+                ]
+            if asm.wing_builder and asm.wing_builder.sections:
+                sections_dict["wing"] = [
+                    s.points_3d for s in asm.wing_builder.sections
+                ]
+            if asm.intake_builder and asm.intake_builder.section_points:
+                sections_dict["intake"] = asm.intake_builder.section_points
+            if asm.stab_builder and asm.stab_builder.section_points:
+                sections_dict["stabilizer"] = asm.stab_builder.section_points
+            export_step(sections_dict, path)
             self._set_status(f"STEP kaydedildi: {path}")
         except Exception as exc:
             messagebox.showerror("Export Hatası", str(exc))

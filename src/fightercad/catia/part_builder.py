@@ -238,8 +238,10 @@ class CATIAPartBuilder:
         # Build intakes
         if assembler.intake_builder:
             right_int, left_int = assembler.intake_builder.build()
-            self.build_wing(right_int, "Intake_Right")
-            self.build_wing(left_int, "Intake_Left")
+            if right_int:
+                self.build_wing(right_int, "Intake_Right")
+            if left_int:
+                self.build_wing(left_int, "Intake_Left")
 
         # Build exhaust
         if assembler.exhaust_builder and assembler.exhaust_builder.section_points:

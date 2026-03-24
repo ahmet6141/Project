@@ -82,12 +82,30 @@ class WingBuilder:
         t_c = p.thickness_to_chord_root * (1.0 - frac) + p.thickness_to_chord_tip * frac
         camber = p.camber_root_pct * (1.0 - frac) + p.camber_tip_pct * frac
 
-        af_2d = get_airfoil(
-            p.root_airfoil, chord, p.leading_edge_radius_mm, self.n_af,
-            thickness_override=t_c,
-            camber_pct=camber,
-            te_thickness_mm=p.te_thickness_mm,
-        )
+        # Blend airfoil type from root to tip when they differ
+        if p.tip_airfoil != p.root_airfoil and frac > 0.3:
+            # Transition zone: 30%-100% span → blend root→tip airfoil
+            blend_t = (frac - 0.3) / 0.7
+            af_root = get_airfoil(
+                p.root_airfoil, chord, p.leading_edge_radius_mm, self.n_af,
+                thickness_override=t_c, camber_pct=camber,
+                te_thickness_mm=p.te_thickness_mm,
+            )
+            af_tip = get_airfoil(
+                p.tip_airfoil, chord, p.leading_edge_radius_mm, self.n_af,
+                thickness_override=t_c, camber_pct=camber,
+                te_thickness_mm=p.te_thickness_mm,
+            )
+            # Ensure same point count for blending
+            n_common = min(len(af_root), len(af_tip))
+            af_2d = af_root[:n_common] * (1.0 - blend_t) + af_tip[:n_common] * blend_t
+        else:
+            af_2d = get_airfoil(
+                p.root_airfoil, chord, p.leading_edge_radius_mm, self.n_af,
+                thickness_override=t_c,
+                camber_pct=camber,
+                te_thickness_mm=p.te_thickness_mm,
+            )
 
         # Apply twist around quarter-chord
         qc_x = chord * 0.25
@@ -199,11 +217,27 @@ class WingBuilder:
             t_c = p.thickness_to_chord_root * (1.0 - frac) + p.thickness_to_chord_tip * frac
             camber = p.camber_root_pct * (1.0 - frac) + p.camber_tip_pct * frac
 
-            af_2d = get_airfoil(
-                p.root_airfoil, chord, p.leading_edge_radius_mm, self.n_af,
-                thickness_override=t_c, camber_pct=camber,
-                te_thickness_mm=p.te_thickness_mm,
-            )
+            # Blend airfoil type from root to tip when they differ
+            if p.tip_airfoil != p.root_airfoil and frac > 0.3:
+                blend_t = (frac - 0.3) / 0.7
+                af_root = get_airfoil(
+                    p.root_airfoil, chord, p.leading_edge_radius_mm, self.n_af,
+                    thickness_override=t_c, camber_pct=camber,
+                    te_thickness_mm=p.te_thickness_mm,
+                )
+                af_tip = get_airfoil(
+                    p.tip_airfoil, chord, p.leading_edge_radius_mm, self.n_af,
+                    thickness_override=t_c, camber_pct=camber,
+                    te_thickness_mm=p.te_thickness_mm,
+                )
+                n_common = min(len(af_root), len(af_tip))
+                af_2d = af_root[:n_common] * (1.0 - blend_t) + af_tip[:n_common] * blend_t
+            else:
+                af_2d = get_airfoil(
+                    p.root_airfoil, chord, p.leading_edge_radius_mm, self.n_af,
+                    thickness_override=t_c, camber_pct=camber,
+                    te_thickness_mm=p.te_thickness_mm,
+                )
 
             qc_x = chord * 0.25
             if abs(twist) > 0.01:
@@ -371,7 +405,7 @@ class WingBuilder:
             for j in range(n_tip - 1):
                 faces.append([center_idx, base_tip + j, base_tip + j + 1])
 
-        return verts, np.array(faces) if faces else (verts, np.zeros((0, 3), dtype=int))
+        return (verts, np.array(faces)) if faces else (verts, np.zeros((0, 3), dtype=int))
 
     @staticmethod
     def build_sawtooth_te(
@@ -459,7 +493,7 @@ class WingBuilder:
             faces.append([i, i + 1, n_v + i + 1])
             faces.append([i, n_v + i + 1, n_v + i])
 
-        return all_verts, np.array(faces) if faces else (all_verts, np.zeros((0, 3), dtype=int))
+        return (all_verts, np.array(faces)) if faces else (all_verts, np.zeros((0, 3), dtype=int))
 
     def get_mesh(self) -> tuple[np.ndarray, np.ndarray]:
         """Generate triangle mesh for one wing half (right side)."""

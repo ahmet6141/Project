@@ -190,7 +190,7 @@ def _parse_thickness(airfoil_name: str) -> float:
             pass
     if airfoil_name.startswith("naca"):
         try:
-            return float(airfoil_name[-2:]) / 10.0
+            return float(airfoil_name[-2:])  # e.g. 'naca0012' -> 12.0%
         except ValueError:
             pass
     return 5.0  # default

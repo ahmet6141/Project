@@ -267,7 +267,7 @@ def get_airfoil(
                                camber_pct=camber_pct,
                                te_thickness_mm=te_thickness_mm)
     elif airfoil_type.startswith("naca"):
-        tpct = float(airfoil_type[-2:]) / 10.0  # e.g. '04' -> 4.0
+        tpct = float(airfoil_type[-2:])  # e.g. '04' -> 4.0 (percent)
         if thickness_override is not None:
             tpct = thickness_override * 100.0
         return naca_4digit_symmetric(chord, tpct, num_points,

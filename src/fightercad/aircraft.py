@@ -328,14 +328,20 @@ class AircraftAssembler:
         areas = np.zeros_like(x_stations)
         half_span, _, tip_chord = self.wing_builder._compute_planform()
 
+        # Use actual wing thickness parameters for area estimation
+        tc_root = wing_params.thickness_to_chord_root
+        tc_tip = wing_params.thickness_to_chord_tip
+
         for i, x in enumerate(x_stations):
             x_local = x - wing_x_offset
             if 0 <= x_local <= root_chord and root_chord > 0:
                 chord_frac = x_local / root_chord
-                local_span = half_span * 2.0
-                t_pct = 5.0 / 100.0
                 local_chord = root_chord * (1.0 - chord_frac * (1.0 - wing_params.taper_ratio))
-                areas[i] = 2.0 * local_span * local_chord * t_pct * 0.5
+                # Interpolate t/c from root to tip based on chordwise position
+                tc_local = tc_root * (1.0 - chord_frac) + tc_tip * chord_frac
+                # Wing cross-section area at this x: A(x) ≈ ∫ t(y) dy
+                # For a linearly-tapered wing: A ≈ 2/3 * span * chord * t/c
+                areas[i] = 2.0 * half_span * local_chord * tc_local * (2.0 / 3.0)
 
         return areas
 
@@ -439,6 +445,23 @@ class AircraftAssembler:
                     (faces[:, 1] != faces[:, 2]) & \
                     (faces[:, 0] != faces[:, 2])
             faces = faces[valid]
+
+            # Fix face winding: ensure normals point outward from centroid
+            if len(faces) > 0:
+                centroid = verts.mean(axis=0)
+                v0 = verts[faces[:, 0]]
+                v1 = verts[faces[:, 1]]
+                v2 = verts[faces[:, 2]]
+                normals = np.cross(v1 - v0, v2 - v0)
+                face_centers = (v0 + v1 + v2) / 3.0
+                outward = face_centers - centroid
+                # Dot product: if normal points inward (dot < 0), flip winding
+                dots = np.sum(normals * outward, axis=1)
+                flip_mask = dots < 0
+                # Swap v1 and v2 to reverse winding
+                faces[flip_mask, 1], faces[flip_mask, 2] = (
+                    faces[flip_mask, 2].copy(), faces[flip_mask, 1].copy(),
+                )
 
         return verts, faces
 
