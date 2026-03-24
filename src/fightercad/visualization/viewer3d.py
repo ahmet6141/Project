@@ -244,7 +244,7 @@ class VTKAircraftViewer:
             self._canvas.delete("all")
             self._canvas.create_text(
                 w // 2, h // 2,
-                text=f"Render hatasi: {exc}",
+                text=f"Render hatası: {exc}",
                 fill="red", font=("TkDefaultFont", 10),
             )
 
@@ -285,7 +285,7 @@ class VTKAircraftViewer:
             fg = "#aaa" if self._bg_color == "dark" else "#555"
             self._canvas.create_text(
                 w // 2, h // 2,
-                text="Henuz geometri olusturulmadi.\n'Olustur' butonuna basin.",
+                text="Henüz geometri oluşturulmadı.\n'Oluştur' butonuna basın.",
                 fill=fg, font=("TkDefaultFont", 11), justify="center",
             )
             return

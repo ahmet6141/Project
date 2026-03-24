@@ -17,7 +17,7 @@ def prandtl_glauert_factor(mach: float) -> float:
     For subsonic: β = √(1 - M²)
     For supersonic: β = √(M² - 1)
     """
-    return math.sqrt(abs(1.0 - mach ** 2) + 1e-12)
+    return math.sqrt(abs(1.0 - mach ** 2) + 1e-15)
 
 
 def ackeret_cp(surface_angle_rad: float, mach: float) -> float:

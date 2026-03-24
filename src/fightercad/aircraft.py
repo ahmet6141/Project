@@ -330,7 +330,7 @@ class AircraftAssembler:
 
         for i, x in enumerate(x_stations):
             x_local = x - wing_x_offset
-            if 0 <= x_local <= root_chord:
+            if 0 <= x_local <= root_chord and root_chord > 0:
                 chord_frac = x_local / root_chord
                 local_span = half_span * 2.0
                 t_pct = 5.0 / 100.0

@@ -213,8 +213,11 @@ class FighterCADApp(tk.Tk):
         self._use_vtk = is_vtk_available()
 
         # Debounce timer for live slider updates
-        self._debounce_id: str | None = None
+        self._debounce_id: str | int | None = None
         self._generating = False
+
+        # CATIA COM connection (lazily initialized)
+        self._catia: Any = None
 
         self._create_menu()
         self._create_layout()
@@ -297,7 +300,7 @@ class FighterCADApp(tk.Tk):
         bar.pack(fill="x", padx=2, pady=2)
 
         # View presets
-        ttk.Label(bar, text="Gorunum:").pack(side="left", padx=(4, 2))
+        ttk.Label(bar, text="Görünüm:").pack(side="left", padx=(4, 2))
         for preset, label in [("iso", "Izo"), ("top", "Ust"), ("front", "On"),
                                ("side", "Yan"), ("rear", "Arka")]:
             ttk.Button(
@@ -321,7 +324,7 @@ class FighterCADApp(tk.Tk):
         # Background toggle
         self._bg_var = tk.StringVar(value="dark")
         ttk.Checkbutton(
-            bar, text="Acik Arka Plan",
+            bar, text="Açık Arka Plan",
             command=self._on_bg_toggle,
         ).pack(side="left", padx=4)
 
@@ -333,7 +336,7 @@ class FighterCADApp(tk.Tk):
         ttk.Label(bar, textvariable=self._mesh_stats_var, font=("Consolas", 8)).pack(side="right", padx=4)
 
         # Component visibility panel (collapsible)
-        vis_frame = ttk.LabelFrame(parent, text="Bilesen Gorunurluk", padding=2)
+        vis_frame = ttk.LabelFrame(parent, text="Bileşen Görünürlük", padding=2)
         vis_frame.pack(fill="x", padx=2, pady=1)
         self._vis_vars: dict[str, tk.BooleanVar] = {}
         self._vis_frame = vis_frame
@@ -447,7 +450,7 @@ class FighterCADApp(tk.Tk):
 
         # --- Wing ---
         f = section("Kanat (Wing)")
-        slider(f, "wing.span_m", "Kanat Acikligi (m)", 4, 16, 7.85, 0.05)
+        slider(f, "wing.span_m", "Kanat Açıklığı (m)", 4, 16, 7.85, 0.05)
         slider(f, "wing.area_m2", "Alan (m²)", 15, 60, 28.0, 0.5)
 
         # Computed info labels (read-only)
@@ -821,7 +824,7 @@ class FighterCADApp(tk.Tk):
             messagebox.showerror("CATIA Model Hatası", f"Model oluşturma hatası:\n{exc}")
 
     def _on_catia_send(self) -> None:
-        if not hasattr(self, "_catia") or self._catia is None:
+        if self._catia is None:
             messagebox.showinfo("Bilgi", "Önce CATIA > Bağlan ile bağlantı kurun.")
             return
         if self._assembler is None:

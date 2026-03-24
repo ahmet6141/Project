@@ -144,7 +144,7 @@ class FuselageBuilder:
         canopy_start = L * p.cockpit_station_pct
         canopy_end = canopy_start + L * p.canopy_length_pct
 
-        if x < canopy_start or x > canopy_end:
+        if x < canopy_start or x > canopy_end or canopy_end <= canopy_start:
             return pts
 
         t_canopy = (x - canopy_start) / (canopy_end - canopy_start)

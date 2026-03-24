@@ -47,7 +47,6 @@ def test_airfoil_types():
 
 def test_wing_mesh():
     builder = WingBuilder(WingParams())
-    builder.build()
     # Sections should have 3D points
     right_secs, left_secs = builder.build()
     for sec in right_secs:
